@@ -10,19 +10,24 @@ export interface Product {
 	productId: number;
 	productName: string;
 	category: string;
-	style: string;
-	color: string;
-	material: string;
+	style?: string;
+	color?: string;
+	material?: string;
 	price: number;
-	brand: string;
-	dimensions: { width: number; height: number };
+	// Dimensions are now flattened and match the DB columns exactly
+	widthCm?: number;
+	depthCm?: number;
+	heightCm?: number;
 	stock: number;
-	imageUrl?: string; // Made optional
+	imageUrl?: string;
+	createdAt?: string;
+	updatedAt?: string;
 }
 
 export interface HistoryLog {
 	historyId: number;
 	userId: number;
+	chatId: string | number;
 	userInput: string;
 	botOutput: string;
 	summary: string;

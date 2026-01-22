@@ -1,6 +1,6 @@
 import { useState, useEffect } from "react";
 import { motion, AnimatePresence } from "framer-motion";
-import { Users, Package, Plus, Edit2, Trash2, History } from "lucide-react";
+import { Users, Package, Plus, Edit2, Trash2, History, Maximize } from "lucide-react";
 import type { User, Product, HistoryLog } from "../types";
 import { api } from "../lib/api";
 import { Modal } from "./ui/Modal";
@@ -58,7 +58,6 @@ export const Dashboard = () => {
 
 	const handleViewHistory = async (uid: number) => {
 		setModal({ isOpen: true, type: 'history', data: uid });
-		// Corrected to use the function defined in your api.ts
 		const history = await api.getUserChats(uid);
 		setSelectedHistory(history);
 	};
@@ -111,14 +110,32 @@ export const Dashboard = () => {
 							{products.map(product => (
 								<div key={product.productId} className="bg-white dark:bg-gray-900 border dark:border-gray-800 rounded-xl overflow-hidden shadow-sm flex flex-col group">
 									<div className="h-44 bg-gray-100 dark:bg-gray-800 relative overflow-hidden">
-										<img src={product.imageUrl || FALLBACK_IMAGE} className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500" onError={(e: any) => e.target.src = FALLBACK_IMAGE} />
+										<img
+											src={product.imageUrl || FALLBACK_IMAGE}
+											className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500"
+											onError={(e: any) => e.target.src = FALLBACK_IMAGE}
+										/>
+										<div className="absolute top-2 left-2 flex gap-1">
+											<span className="bg-black/50 backdrop-blur-md text-white text-[10px] px-2 py-0.5 rounded uppercase font-bold tracking-wider">
+												{product.category}
+											</span>
+										</div>
 									</div>
 									<div className="p-4 flex-1 flex flex-col">
 										<div className="flex justify-between mb-2 items-start">
-											<h3 className="font-bold dark:text-white group-hover:text-blue-600 transition-colors">{product.productName}</h3>
+											<div>
+												<h3 className="font-bold dark:text-white group-hover:text-emerald-500 transition-colors">{product.productName}</h3>
+												<p className="text-xs text-gray-500 dark:text-gray-400 capitalize">{product.style} • {product.material}</p>
+											</div>
 											<span className="text-emerald-600 dark:text-emerald-400 font-bold bg-emerald-50 dark:bg-emerald-900/20 px-2 py-0.5 rounded text-sm">${product.price}</span>
 										</div>
-										<div className="mt-auto flex gap-2 pt-4">
+
+										<div className="flex items-center gap-3 mt-2 mb-4 text-[11px] text-gray-400 border-t border-gray-100 dark:border-gray-800 pt-3">
+											<div className="flex items-center gap-1"><Maximize size={12} /> {product.widthCm}x{product.depthCm}x{product.heightCm}cm</div>
+											<div className="ml-auto">Stock: <span className={product.stock && product.stock > 0 ? "text-emerald-500" : "text-red-500"}>{product.stock}</span></div>
+										</div>
+
+										<div className="mt-auto flex gap-2">
 											<button onClick={() => setModal({ isOpen: true, type: 'product', data: product })} className="flex-1 flex items-center justify-center gap-2 py-2 text-blue-600 bg-blue-50 hover:bg-blue-100 dark:bg-blue-900/20 dark:text-blue-400 rounded-lg transition-colors"><Edit2 size={16} /> Edit</button>
 											<button onClick={() => handleDeleteProduct(product.productId)} className="px-3 py-2 text-red-600 bg-red-50 hover:bg-red-100 dark:bg-red-900/20 rounded-lg transition-colors"><Trash2 size={16} /></button>
 										</div>

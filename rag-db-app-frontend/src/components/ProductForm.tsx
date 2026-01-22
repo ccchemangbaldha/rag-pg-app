@@ -11,21 +11,22 @@ interface ProductFormProps {
 
 export const ProductForm = ({ initialData, onSubmit, onCancel }: ProductFormProps) => {
 	const [formData, setFormData] = useState<Partial<Product>>({
-		productName: "", category: "", price: 0, stock: 0, brand: "",
-		style: "", color: "", material: "", dimensions: { width: 0, height: 0 },
+		productName: "",
+		category: "",
+		price: 0,
+		stock: 0,
+		style: "",
+		color: "",
+		material: "",
+		widthCm: 0,
+		depthCm: 0,
+		heightCm: 0,
 		imageUrl: "",
 		...initialData
 	});
 
 	const handleChange = (field: keyof Product, value: any) => {
 		setFormData(prev => ({ ...prev, [field]: value }));
-	};
-
-	const handleDimChange = (dim: 'width' | 'height', value: string) => {
-		setFormData(prev => ({
-			...prev,
-			dimensions: { ...prev.dimensions!, [dim]: Number(value) }
-		}));
 	};
 
 	return (
@@ -53,17 +54,37 @@ export const ProductForm = ({ initialData, onSubmit, onCancel }: ProductFormProp
 			<div className="grid grid-cols-1 md:grid-cols-2 gap-x-4">
 				<InputGroup label="Product Name" value={formData.productName} onChange={e => handleChange("productName", e.target.value)} required />
 				<InputGroup label="Category" value={formData.category} onChange={e => handleChange("category", e.target.value)} required />
-				<InputGroup label="Brand" value={formData.brand} onChange={e => handleChange("brand", e.target.value)} />
+				<InputGroup label="Style" value={formData.style} onChange={e => handleChange("style", e.target.value)} />
 				<InputGroup label="Price ($)" type="number" step="0.01" value={formData.price} onChange={e => handleChange("price", Number(e.target.value))} />
 				<InputGroup label="Stock Qty" type="number" value={formData.stock} onChange={e => handleChange("stock", Number(e.target.value))} />
 				<InputGroup label="Color" value={formData.color} onChange={e => handleChange("color", e.target.value)} />
+				<InputGroup label="Material" value={formData.material} onChange={e => handleChange("material", e.target.value)} />
 			</div>
 
 			<div className="p-4 bg-gray-50 dark:bg-gray-700/30 rounded-lg mb-4 border dark:border-gray-700">
 				<h4 className="text-sm font-semibold mb-3 dark:text-gray-300">Dimensions (cm)</h4>
-				<div className="flex gap-4">
-					<InputGroup label="Width" type="number" value={formData.dimensions?.width} onChange={e => handleDimChange('width', e.target.value)} className="bg-white dark:bg-gray-800" />
-					<InputGroup label="Height" type="number" value={formData.dimensions?.height} onChange={e => handleDimChange('height', e.target.value)} className="bg-white dark:bg-gray-800" />
+				<div className="grid grid-cols-3 gap-4">
+					<InputGroup
+						label="Width"
+						type="number"
+						value={formData.widthCm}
+						onChange={e => handleChange('widthCm', Number(e.target.value))}
+						className="bg-white dark:bg-gray-800"
+					/>
+					<InputGroup
+						label="Depth"
+						type="number"
+						value={formData.depthCm}
+						onChange={e => handleChange('depthCm', Number(e.target.value))}
+						className="bg-white dark:bg-gray-800"
+					/>
+					<InputGroup
+						label="Height"
+						type="number"
+						value={formData.heightCm}
+						onChange={e => handleChange('heightCm', Number(e.target.value))}
+						className="bg-white dark:bg-gray-800"
+					/>
 				</div>
 			</div>
 

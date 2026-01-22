@@ -1,9 +1,8 @@
 from fastapi import APIRouter
 from pydantic import BaseModel
-from typing import Optional, Dict, Any
+from typing import Optional
 from lib.connection import get_connection
 from utils.response import send
-import json
 
 router = APIRouter(prefix="/products")
 
@@ -14,9 +13,10 @@ class ProductCreate(BaseModel):
     style: Optional[str] = None
     color: Optional[str] = None
     material: Optional[str] = None
-    price: Optional[float] = 0.0
-    brand: Optional[str] = None
-    dimensions: Optional[Dict[str, Any]] = None
+    price: float
+    widthCm: Optional[float] = None
+    depthCm: Optional[float] = None
+    heightCm: Optional[float] = None
     stock: Optional[int] = 0
     imageUrl: Optional[str] = None
 
@@ -27,8 +27,9 @@ class ProductUpdate(BaseModel):
     color: Optional[str] = None
     material: Optional[str] = None
     price: Optional[float] = None
-    brand: Optional[str] = None
-    dimensions: Optional[Dict[str, Any]] = None
+    widthCm: Optional[float] = None
+    depthCm: Optional[float] = None
+    heightCm: Optional[float] = None
     stock: Optional[int] = None
     imageUrl: Optional[str] = None
 
@@ -40,18 +41,16 @@ def create_product(product: ProductCreate):
         conn = get_connection()
         cur = conn.cursor()
         
-        dim_json = json.dumps(product.dimensions) if product.dimensions else None
-
-        # FIX: Added double quotes around column names
         cur.execute("""
             INSERT INTO "products"
-            ("productName", "category", "style", "color", "material", "price", "brand", "dimensions", "stock", "imageUrl")
-            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+            ("productName", "category", "style", "color", "material", "price", 
+             "widthCm", "depthCm", "heightCm", "stock", "imageUrl")
+            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
             RETURNING "productId";
         """, (
             product.productName, product.category, product.style, product.color, 
-            product.material, product.price, product.brand, dim_json, 
-            product.stock, product.imageUrl
+            product.material, product.price, product.widthCm, product.depthCm, 
+            product.heightCm, product.stock, product.imageUrl
         ))
         
         pid = cur.fetchone()[0]
@@ -108,19 +107,15 @@ def update_product(productId: int, product: ProductUpdate):
         fields = []
         values = []
         
+        # .dict(exclude_unset=True) ensures we only update fields sent in the request
         model_dump = product.dict(exclude_unset=True)
         
-        for key, value in model_dump.items():
-            # FIX: Ensure keys are quoted for the UPDATE statement
-            fields.append(f'"{key}"=%s') 
-            
-            if key == 'dimensions' and value is not None:
-                values.append(json.dumps(value))
-            else:
-                values.append(value)
-
-        if not fields:
+        if not model_dump:
             return send(False, "Nothing to update")
+
+        for key, value in model_dump.items():
+            fields.append(f'"{key}"=%s')
+            values.append(value)
 
         values.append(productId)
 
