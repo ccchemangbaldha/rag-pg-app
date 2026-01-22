@@ -125,3 +125,29 @@ def delete_history(historyId: int):
         return send(False, "History record not found")
     except Exception as e:
         return send(False, "Failed to delete history", str(e))
+
+@router.delete("/chat/{chatId}")
+def delete_chat_session(chatId: str):
+    """
+    Deletes all messages associated with a specific chatId.
+    """
+    try:
+        conn = get_connection()
+        cur = conn.cursor()
+        
+        cur.execute("""
+            DELETE FROM "history" 
+            WHERE "chatId" = %s 
+            RETURNING "chatId";
+        """, (chatId,))
+        
+        deleted_rows = cur.rowcount
+        conn.commit()
+        cur.close()
+        conn.close()
+        
+        if deleted_rows > 0:
+            return send(True, f"Chat session {chatId} deleted", {"chatId": chatId, "count": deleted_rows})
+        return send(False, "Chat session not found")
+    except Exception as e:
+        return send(False, "Failed to delete chat session", str(e))

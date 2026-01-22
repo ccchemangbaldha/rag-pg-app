@@ -1,5 +1,14 @@
 import { useState, useEffect } from "react";
-import { Moon, Sun, LayoutDashboard, MessageSquare, LogOut, Plus, MessageCircle } from "lucide-react";
+import {
+  Moon,
+  Sun,
+  LayoutDashboard,
+  MessageSquare,
+  LogOut,
+  Plus,
+  MessageCircle,
+  Trash2 // Imported Trash icon
+} from "lucide-react";
 import { LoginScreen } from "./components/LoginScreen";
 import { Dashboard } from "./components/Dashboard";
 import { ChatInterface } from "./components/ChatInterface";
@@ -14,17 +23,30 @@ export default function App() {
   const [chatList, setChatList] = useState<any[]>([]);
   const [activeChatId, setActiveChatId] = useState<string | null>(null);
 
+  // Helper to refresh chat list
+  const refreshChatList = () => {
+    if (userSession?.userId) {
+      api.getUserChats(userSession.userId)
+        .then(setChatList)
+        .catch(console.error);
+    }
+  };
+
   useEffect(() => {
     const stored = localStorage.getItem(STORAGE_KEY);
     if (stored) {
-      try { setUserSession(JSON.parse(atob(stored))); } catch (e) { localStorage.removeItem(STORAGE_KEY); }
+      try {
+        setUserSession(JSON.parse(atob(stored)));
+      } catch (e) {
+        localStorage.removeItem(STORAGE_KEY);
+      }
     }
   }, []);
 
-  // Fetch Chat History List for Sidebar
+  // Fetch Chat History List
   useEffect(() => {
     if (userSession && view === 'chat') {
-      api.getUserChats(userSession.userId).then(setChatList).catch(console.error);
+      refreshChatList();
     }
   }, [userSession, view]);
 
@@ -39,7 +61,26 @@ export default function App() {
   };
 
   const startNewChat = () => {
-    setActiveChatId(null); // ChatInterface should handle generating a new ID on first message
+    setActiveChatId(null);
+  };
+
+  // Handle Delete Chat Session
+  const handleDeleteChat = async (e: React.MouseEvent, chatId: string) => {
+    e.stopPropagation(); // Prevent the click from selecting the chat
+
+    if (window.confirm("Are you sure you want to delete this conversation?")) {
+      try {
+        await api.deleteChatSession(chatId);
+        // If the deleted chat was the active one, reset view
+        if (activeChatId === chatId) {
+          setActiveChatId(null);
+        }
+        refreshChatList(); // Update sidebar
+      } catch (error) {
+        alert("Failed to delete chat. Please try again.");
+        console.error(error);
+      }
+    }
   };
 
   if (!userSession) {
@@ -68,7 +109,9 @@ export default function App() {
           <button onClick={() => setDarkMode(!darkMode)} className="p-2 rounded-full hover:bg-gray-100 dark:hover:bg-gray-800">
             {darkMode ? <Sun className="text-amber-400" size={20} /> : <Moon className="text-gray-600" size={20} />}
           </button>
-          <button onClick={handleLogout} className="p-2 text-red-500 hover:bg-red-50 dark:hover:bg-red-900/20 rounded-lg"><LogOut size={20} /></button>
+          <button onClick={handleLogout} className="p-2 text-red-500 hover:bg-red-50 dark:hover:bg-red-900/20 rounded-lg">
+            <LogOut size={20} />
+          </button>
         </div>
       </nav>
 
@@ -86,15 +129,27 @@ export default function App() {
             </div>
             <div className="flex-1 overflow-y-auto px-2 space-y-1">
               <p className="px-3 text-xs font-semibold text-gray-400 uppercase tracking-wider mb-2">Recent</p>
+
               {chatList.map((chat) => (
-                <button
-                  key={chat.chatId}
-                  onClick={() => setActiveChatId(chat.chatId)}
-                  className={`w-full text-left px-3 py-2 rounded-lg text-sm truncate flex items-center gap-2 transition-colors ${activeChatId === chat.chatId ? 'bg-blue-50 dark:bg-blue-900/20 text-blue-600' : 'hover:bg-gray-100 dark:hover:bg-gray-800 text-gray-600 dark:text-gray-400'}`}
-                >
-                  <MessageCircle size={14} />
-                  {chat.title?.split(" ").slice(0, 5).join(" ") || "New Conversation"}
-                </button>
+                <div key={chat.chatId} className="group relative flex items-center">
+                  <button
+                    onClick={() => setActiveChatId(chat.chatId)}
+                    className={`w-full text-left px-3 py-2 rounded-lg text-sm truncate flex items-center gap-2 transition-colors ${activeChatId === chat.chatId ? 'bg-blue-50 dark:bg-blue-900/20 text-blue-600' : 'hover:bg-gray-100 dark:hover:bg-gray-800 text-gray-600 dark:text-gray-400'}`}
+                  >
+                    <MessageCircle size={14} className="flex-shrink-0" />
+                    <span className="truncate pr-8">
+                      {chat.title?.split(" ").slice(0, 5).join(" ") || "New Conversation"}
+                    </span>
+                  </button>
+
+                  {/* Delete Button - only visible on hover */}
+                  <button
+                    onClick={(e) => handleDeleteChat(e, chat.chatId)}
+                    className="absolute right-2 p-1.5 text-gray-400 hover:text-red-500 opacity-0 group-hover:opacity-100 transition-opacity rounded-md hover:bg-gray-200 dark:hover:bg-gray-700"
+                  >
+                    <Trash2 size={14} />
+                  </button>
+                </div>
               ))}
             </div>
           </aside>
@@ -102,10 +157,11 @@ export default function App() {
 
         <main className="flex-1 relative overflow-y-auto">
           {view === 'chat' ? (
-            <ChatInterface user={userSession} chatId={activeChatId} onNewMessage={() => {
-              // Refresh list when a new message is sent
-              api.getUserChats(userSession.userId).then(setChatList);
-            }} />
+            <ChatInterface
+              user={userSession}
+              chatId={activeChatId}
+              onNewMessage={refreshChatList}
+            />
           ) : (
             <div className="container mx-auto p-6"><Dashboard /></div>
           )}
