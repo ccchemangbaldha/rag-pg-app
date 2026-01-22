@@ -2,6 +2,8 @@ import { useState, useEffect, useRef } from "react";
 import { motion } from "framer-motion";
 import { Send, Bot, User as UserIcon, Loader2, Sparkles, Image as ImageIcon, X } from "lucide-react";
 import { api } from "../lib/api";
+import ReactMarkdown from "react-markdown";
+import remarkGfm from "remark-gfm";
 
 interface Message {
 	id: number;
@@ -168,7 +170,28 @@ export const ChatInterface = ({ user }: { user: any }) => {
 										<img src={msg.image} alt="User upload" className="max-w-full h-auto object-cover" />
 									</div>
 								)}
-								{msg.text}
+								<ReactMarkdown
+									remarkPlugins={[remarkGfm]}
+									components={{
+										p: ({ children }) => <p className="mb-2 last:mb-0">{children}</p>,
+										ul: ({ children }) => <ul className="list-disc pl-5 mb-2">{children}</ul>,
+										ol: ({ children }) => <ol className="list-decimal pl-5 mb-2">{children}</ol>,
+										li: ({ children }) => <li className="mb-1">{children}</li>,
+										strong: ({ children }) => <strong className="font-semibold">{children}</strong>,
+										code: ({ children }) => (
+											<code className="px-1 py-0.5 rounded text-xs">
+												{children}
+											</code>
+										),
+										pre: ({ children }) => (
+											<pre className="bg-gray-900 text-gray-100 p-3 rounded-lg overflow-x-auto text-xs">
+												{children}
+											</pre>
+										)
+									}}
+								>
+									{msg.text}
+								</ReactMarkdown>	
 							</div>
 							{msg.role === 'bot' && msg.summary && (
 								<div className="text-[10px] text-gray-400 pl-2">Summary: {msg.summary}</div>
