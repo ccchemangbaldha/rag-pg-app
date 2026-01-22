@@ -17,7 +17,6 @@ export const Dashboard = () => {
 	const [loading, setLoading] = useState(true);
 	const [selectedHistory, setSelectedHistory] = useState<HistoryLog[]>([]);
 
-	// Modal State
 	const [modal, setModal] = useState<{
 		isOpen: boolean;
 		type: 'user' | 'product' | 'history' | null;
@@ -33,29 +32,38 @@ export const Dashboard = () => {
 		} catch (e) { console.error(e); } finally { setLoading(false); }
 	};
 
-	// --- Handlers (Simplified for brevity, logic same as before) ---
 	const handleSaveUser = async (data: any) => {
 		if (data.userId) await api.updateUser(data.userId, data);
 		else await api.createUser(data);
 		loadData(); setModal({ isOpen: false, type: null });
 	};
+
 	const handleDeleteUser = async (id: number) => {
-		if (!confirm("Delete?")) return; await api.deleteUser(id); loadData();
+		if (!confirm("Delete this user?")) return;
+		await api.deleteUser(id);
+		loadData();
 	};
+
 	const handleSaveProduct = async (data: any) => {
 		if (data.productId) await api.updateProduct(data.productId, data);
 		else await api.createProduct(data);
 		loadData(); setModal({ isOpen: false, type: null });
 	};
+
 	const handleDeleteProduct = async (id: number) => {
-		if (!confirm("Delete?")) return; await api.deleteProduct(id); loadData();
-	};
-	const handleViewHistory = async (uid: number) => {
-		setModal({ isOpen: true, type: 'history', data: uid });
-		setSelectedHistory(await api.getUserHistory(uid));
+		if (!confirm("Delete this product?")) return;
+		await api.deleteProduct(id);
+		loadData();
 	};
 
-	if (loading) return <div className="text-center py-20">Loading...</div>;
+	const handleViewHistory = async (uid: number) => {
+		setModal({ isOpen: true, type: 'history', data: uid });
+		// Corrected to use the function defined in your api.ts
+		const history = await api.getUserChats(uid);
+		setSelectedHistory(history);
+	};
+
+	if (loading) return <div className="text-center py-20 dark:text-white">Loading Systems...</div>;
 
 	return (
 		<>
@@ -71,47 +79,48 @@ export const Dashboard = () => {
 			<AnimatePresence mode="wait">
 				{activeTab === "users" ? (
 					<motion.div key="users" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}>
-						<div className="flex justify-between mb-6">
-							<h2 className="text-2xl font-bold dark:text-white">Users</h2>
-							<button onClick={() => setModal({ isOpen: true, type: 'user', data: {} })} className="flex items-center gap-2 bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700"><Plus size={18} /> Add User</button>
+						<div className="flex justify-between mb-6 items-center">
+							<h2 className="text-2xl font-bold dark:text-white">User Management</h2>
+							<button onClick={() => setModal({ isOpen: true, type: 'user', data: {} })} className="flex items-center gap-2 bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700 transition-colors shadow-sm"><Plus size={18} /> Add User</button>
 						</div>
-						<div className="grid gap-4 md:grid-cols-3">
+						<div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
 							{users.map(user => (
-								<div key={user.userId} className="bg-white dark:bg-gray-900 border dark:border-gray-800 p-5 rounded-xl shadow-sm">
+								<div key={user.userId} className="bg-white dark:bg-gray-900 border dark:border-gray-800 p-5 rounded-xl shadow-sm hover:shadow-md transition-shadow">
 									<div className="flex justify-between mb-4">
-										<div className="font-bold text-gray-500">{user.username?.[0]?.toUpperCase()}</div>
+										<div className="h-10 w-10 rounded-full bg-blue-100 dark:bg-blue-900/30 flex items-center justify-center font-bold text-blue-600 dark:text-blue-400">{user.username?.[0]?.toUpperCase()}</div>
 										<div className="flex gap-1">
-											<button onClick={() => handleViewHistory(user.userId)} className="p-2 text-yellow-500 hover:bg-yellow-50 dark:hover:bg-yellow-900/20 rounded"><History size={16} /></button>
-											<button onClick={() => setModal({ isOpen: true, type: 'user', data: user })} className="p-2 text-blue-500 hover:bg-blue-50 dark:hover:bg-blue-900/20 rounded"><Edit2 size={16} /></button>
-											<button onClick={() => handleDeleteUser(user.userId)} className="p-2 text-red-500 hover:bg-red-50 dark:hover:bg-red-900/20 rounded"><Trash2 size={16} /></button>
+											<button onClick={() => handleViewHistory(user.userId)} className="p-2 text-yellow-500 hover:bg-yellow-50 dark:hover:bg-yellow-900/20 rounded transition-colors" title="View History"><History size={16} /></button>
+											<button onClick={() => setModal({ isOpen: true, type: 'user', data: user })} className="p-2 text-blue-500 hover:bg-blue-50 dark:hover:bg-blue-900/20 rounded transition-colors"><Edit2 size={16} /></button>
+											<button onClick={() => handleDeleteUser(user.userId)} className="p-2 text-red-500 hover:bg-red-50 dark:hover:bg-red-900/20 rounded transition-colors"><Trash2 size={16} /></button>
 										</div>
 									</div>
-									<h3 className="font-bold dark:text-white">{user.username}</h3>
-									<p className="text-gray-500 text-sm">{user.email}</p>
+									<h3 className="font-bold dark:text-white text-lg">{user.username}</h3>
+									<p className="text-gray-500 text-sm mb-1">{user.email}</p>
+									<p className="text-xs text-gray-400">UID: {user.userId}</p>
 								</div>
 							))}
 						</div>
 					</motion.div>
 				) : (
 					<motion.div key="products" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}>
-						<div className="flex justify-between mb-6">
-							<h2 className="text-2xl font-bold dark:text-white">Products</h2>
-							<button onClick={() => setModal({ isOpen: true, type: 'product', data: {} })} className="flex items-center gap-2 bg-emerald-600 text-white px-4 py-2 rounded-lg hover:bg-emerald-700"><Plus size={18} /> Add Product</button>
+						<div className="flex justify-between mb-6 items-center">
+							<h2 className="text-2xl font-bold dark:text-white">Product Inventory</h2>
+							<button onClick={() => setModal({ isOpen: true, type: 'product', data: {} })} className="flex items-center gap-2 bg-emerald-600 text-white px-4 py-2 rounded-lg hover:bg-emerald-700 transition-colors shadow-sm"><Plus size={18} /> Add Product</button>
 						</div>
-						<div className="grid gap-6 md:grid-cols-3">
+						<div className="grid gap-6 md:grid-cols-2 lg:grid-cols-3">
 							{products.map(product => (
-								<div key={product.productId} className="bg-white dark:bg-gray-900 border dark:border-gray-800 rounded-xl overflow-hidden shadow-sm flex flex-col">
-									<div className="h-40 bg-gray-100 dark:bg-gray-800 relative">
-										<img src={product.imageUrl || FALLBACK_IMAGE} className="w-full h-full object-cover" onError={(e: any) => e.target.src = FALLBACK_IMAGE} />
+								<div key={product.productId} className="bg-white dark:bg-gray-900 border dark:border-gray-800 rounded-xl overflow-hidden shadow-sm flex flex-col group">
+									<div className="h-44 bg-gray-100 dark:bg-gray-800 relative overflow-hidden">
+										<img src={product.imageUrl || FALLBACK_IMAGE} className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500" onError={(e: any) => e.target.src = FALLBACK_IMAGE} />
 									</div>
 									<div className="p-4 flex-1 flex flex-col">
-										<div className="flex justify-between mb-2">
-											<h3 className="font-bold dark:text-white">{product.productName}</h3>
-											<span className="text-emerald-600 font-bold">${product.price}</span>
+										<div className="flex justify-between mb-2 items-start">
+											<h3 className="font-bold dark:text-white group-hover:text-blue-600 transition-colors">{product.productName}</h3>
+											<span className="text-emerald-600 dark:text-emerald-400 font-bold bg-emerald-50 dark:bg-emerald-900/20 px-2 py-0.5 rounded text-sm">${product.price}</span>
 										</div>
 										<div className="mt-auto flex gap-2 pt-4">
-											<button onClick={() => setModal({ isOpen: true, type: 'product', data: product })} className="flex-1 flex items-center justify-center gap-1 py-2 text-blue-600 bg-blue-50 hover:bg-blue-100 dark:bg-blue-900/20 rounded-lg"><Edit2 size={16} /> Edit</button>
-											<button onClick={() => handleDeleteProduct(product.productId)} className="px-3 py-2 text-red-600 bg-red-50 hover:bg-red-100 dark:bg-red-900/20 rounded-lg"><Trash2 size={16} /></button>
+											<button onClick={() => setModal({ isOpen: true, type: 'product', data: product })} className="flex-1 flex items-center justify-center gap-2 py-2 text-blue-600 bg-blue-50 hover:bg-blue-100 dark:bg-blue-900/20 dark:text-blue-400 rounded-lg transition-colors"><Edit2 size={16} /> Edit</button>
+											<button onClick={() => handleDeleteProduct(product.productId)} className="px-3 py-2 text-red-600 bg-red-50 hover:bg-red-100 dark:bg-red-900/20 rounded-lg transition-colors"><Trash2 size={16} /></button>
 										</div>
 									</div>
 								</div>
@@ -121,7 +130,7 @@ export const Dashboard = () => {
 				)}
 			</AnimatePresence>
 
-			<Modal isOpen={modal.isOpen} onClose={() => setModal({ ...modal, isOpen: false })} title={modal.type === 'history' ? "History" : "Edit Details"}>
+			<Modal isOpen={modal.isOpen} onClose={() => setModal({ ...modal, isOpen: false })} title={modal.type === 'history' ? "Conversation Logs" : "Data Management"}>
 				{modal.type === 'user' && <UserForm initialData={modal.data} onSubmit={handleSaveUser} onCancel={() => setModal({ ...modal, isOpen: false })} />}
 				{modal.type === 'product' && <ProductForm initialData={modal.data} onSubmit={handleSaveProduct} onCancel={() => setModal({ ...modal, isOpen: false })} />}
 				{modal.type === 'history' && <HistoryViewer logs={selectedHistory} />}

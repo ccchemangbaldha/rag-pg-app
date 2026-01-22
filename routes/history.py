@@ -9,6 +9,7 @@ router = APIRouter(prefix="/history")
 # --- Pydantic Model ---
 class HistoryCreate(BaseModel):
     userId: int
+    chatId: str  # Added to identify the specific conversation
     userInput: str
     botOutput: str
     summary: Optional[str] = None
@@ -20,11 +21,12 @@ def create_history(history: HistoryCreate):
     try:
         conn = get_connection()
         cur = conn.cursor()
+        # Updated to include chatId
         cur.execute("""
-            INSERT INTO "history"("userId", "userInput", "botOutput", "summary")
-            VALUES (%s, %s, %s, %s) 
+            INSERT INTO "history"("userId", "chatId", "userInput", "botOutput", "summary")
+            VALUES (%s, %s, %s, %s, %s) 
             RETURNING "historyId";
-        """, (history.userId, history.userInput, history.botOutput, history.summary))
+        """, (history.userId, history.chatId, history.userInput, history.botOutput, history.summary))
         
         hid = cur.fetchone()[0]
         conn.commit()
@@ -35,38 +37,72 @@ def create_history(history: HistoryCreate):
     except Exception as e:
         return send(False, "Failed to create history", str(e))
 
-@router.get("/{userId}")
-def get_history(userId: int):
+@router.get("/list/{userId}")
+def get_chat_list(userId: int):
+    """
+    Returns a list of unique chat sessions for the user's sidebar.
+    Shows the first user input as the title.
+    """
     try:
         conn = get_connection()
         cur = conn.cursor()
-        # Fetch history sorted by newest first
+        # Get the first message of every unique chatId for this user
         cur.execute("""
-            SELECT "historyId", "userId", "userInput", "botOutput", "summary", "createdAt"
+            SELECT DISTINCT ON ("chatId") "chatId", "userInput", "createdAt"
             FROM "history" 
             WHERE "userId" = %s 
-            ORDER BY "createdAt" DESC;
+            ORDER BY "chatId", "createdAt" ASC;
         """, (userId,))
         
         rows = cur.fetchall()
-        
-        # Map tuple results to dictionary
-        history_list = []
+        chat_list = []
         for r in rows:
-            history_list.append({
+            chat_list.append({
+                "chatId": r[0],
+                "title": r[1][:50] + "..." if len(r[1]) > 50 else r[1],
+                "createdAt": str(r[2])
+            })
+            
+        cur.close()
+        conn.close()
+        return send(True, "Chat list retrieved", chat_list)
+    except Exception as e:
+        return send(False, "Failed to fetch chat list", str(e))
+
+@router.get("/{chatId}")
+def get_chat_messages(chatId: str):
+    """
+    Returns all messages for a specific conversation.
+    """
+    try:
+        conn = get_connection()
+        cur = conn.cursor()
+        # Fetch messages for specific chatId sorted by time
+        cur.execute("""
+            SELECT "historyId", "userId", "userInput", "botOutput", "summary", "createdAt"
+            FROM "history" 
+            WHERE "chatId" = %s 
+            ORDER BY "createdAt" ASC;
+        """, (chatId,))
+        
+        rows = cur.fetchall()
+        
+        messages = []
+        for r in rows:
+            messages.append({
                 "historyId": r[0],
                 "userId": r[1],
                 "userInput": r[2],
                 "botOutput": r[3],
                 "summary": r[4],
-                "createdAt": str(r[5]) # Convert timestamp to string for JSON serialization
+                "createdAt": str(r[5])
             })
             
         cur.close()
         conn.close()
-        return send(True, "History retrieved", history_list)
+        return send(True, "Messages retrieved", messages)
     except Exception as e:
-        return send(False, "Failed to fetch history", str(e))
+        return send(False, "Failed to fetch messages", str(e))
 
 @router.delete("/{historyId}")
 def delete_history(historyId: int):

@@ -1,61 +1,49 @@
 import { useState, useEffect, useRef } from "react";
-import { motion } from "framer-motion";
-import { Send, Bot, User as UserIcon, Loader2, Sparkles, Image as ImageIcon, X } from "lucide-react";
+import { motion, AnimatePresence } from "framer-motion";
+import { Send, Bot, User as UserIcon, Loader2, Sparkles, Image as ImageIcon, X, Zap, Copy, Check } from "lucide-react";
 import { api } from "../lib/api";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 
 interface Message {
-	id: number;
+	id: string | number;
 	role: 'user' | 'bot';
 	text: string;
 	image?: string;
 	summary?: string;
 }
 
-export const ChatInterface = ({ user }: { user: any }) => {
+export const ChatInterface = ({ user, chatId, onNewMessage }: { user: any, chatId: string | null, onNewMessage: () => void }) => {
 	const [messages, setMessages] = useState<Message[]>([]);
 	const [input, setInput] = useState("");
 	const [isTyping, setIsTyping] = useState(false);
 	const [selectedImage, setSelectedImage] = useState<string | null>(null);
+	const [copiedId, setCopiedId] = useState<string | number | null>(null);
+
 	const scrollRef = useRef<HTMLDivElement>(null);
 	const fileInputRef = useRef<HTMLInputElement>(null);
 
 	useEffect(() => {
-		loadHistory();
-	}, []);
+		if (chatId) loadChatMessages(chatId);
+		else setMessages([]);
+	}, [chatId]);
 
 	useEffect(() => {
 		scrollRef.current?.scrollIntoView({ behavior: "smooth" });
-	}, [messages, isTyping, selectedImage]);
+	}, [messages, isTyping]);
 
-	const loadHistory = async () => {
+	const loadChatMessages = async (id: string) => {
 		try {
-			const history = await api.getUserHistory(user.userId);
+			const history = await api.getChatMessages(id);
 			const formatted: Message[] = [];
-			const sorted = history.sort((a: any, b: any) =>
-				new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime()
-			);
+			const sorted = history.sort((a: any, b: any) => new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime());
 
 			sorted.forEach((h: any) => {
-				formatted.push({ id: h.historyId * 10, role: 'user', text: h.userInput });
-				formatted.push({ id: h.historyId * 10 + 1, role: 'bot', text: h.botOutput, summary: h.summary });
+				formatted.push({ id: `u-${h.historyId}`, role: 'user', text: h.userInput });
+				formatted.push({ id: `b-${h.historyId}`, role: 'bot', text: h.botOutput, summary: h.summary });
 			});
 			setMessages(formatted);
-		} catch (e) {
-			console.error("Failed to load chat history");
-		}
-	};
-
-	const handleImageSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
-		const file = e.target.files?.[0];
-		if (file) {
-			const reader = new FileReader();
-			reader.onloadend = () => {
-				setSelectedImage(reader.result as string);
-			};
-			reader.readAsDataURL(file);
-		}
+		} catch (e) { console.error("History sync failed"); }
 	};
 
 	const handleSend = async (e: React.FormEvent) => {
@@ -64,205 +52,185 @@ export const ChatInterface = ({ user }: { user: any }) => {
 
 		const userText = input;
 		const userImage = selectedImage;
+		const currentChatId = chatId || `chat-${Date.now()}`;
+		const isNewChat = !chatId;
 
 		setInput("");
 		setSelectedImage(null);
-		if (fileInputRef.current) fileInputRef.current.value = "";
 
-		const tempId = Date.now();
-		setMessages(prev => [...prev, {
-			id: tempId,
-			role: 'user',
-			text: userText,
-			image: userImage || undefined
-		}]);
-
+		const tempId = Date.now().toString();
+		setMessages(prev => [...prev, { id: tempId, role: 'user', text: userText, image: userImage || undefined }]);
 		setIsTyping(true);
 
-		// Inside src/components/ChatInterface.tsx -> handleSend function
-
 		try {
-			// 1. Call the real AI Backend
 			const response: any = await api.chatWithAI({
 				userId: user.userId,
-				prompt: userText,     // The text user typed
-				imageUrl: userImage as any,  // The image (if any)
-				summary: ""           // You can pass previous chat summary here if you have it
+				chatId: currentChatId,
+				prompt: userText,
+				imageUrl: userImage as any,
+				summary: messages.length > 0 ? messages[messages.length - 1].summary : ""
 			});
 
-			// 2. The AI returns "botOutput" and maybe "products"
-			const botResponse = response.botOutput;
-			const action = response.action; // "ask_user" or "show_products"
-			const foundProducts = response.products;
+			setMessages(prev => [...prev, { id: tempId + "_bot", role: 'bot', text: response.botOutput, summary: response.action }]);
 
-			// 3. Add Bot Message to UI
-			setMessages(prev => [...prev, {
-				id: tempId + 1,
-				role: 'bot',
-				text: botResponse,
-				summary: action
-			}]);
-
-			// 4. If products were found, you can log them or show them (Optional)
-			if (foundProducts && foundProducts.length > 0) {
-				console.log("Furniture found:", foundProducts);
-				// Later you can make a UI to display these cards
-			}
-
-			// 5. Save this conversation to History DB
 			await api.createHistory({
 				userId: user.userId,
+				chatId: currentChatId,
 				userInput: userImage ? `[Image] ${userText}` : userText,
-				botOutput: botResponse,
-				summary: action
+				botOutput: response.botOutput,
+				summary: response.action
 			});
 
+			if (isNewChat) onNewMessage();
 		} catch (err) {
-			setMessages(prev => [...prev, { id: Date.now(), role: 'bot', text: "Error: AI Service is offline." }]);
-		} finally {
-			setIsTyping(false);
-		}
+			setMessages(prev => [...prev, { id: "err", role: 'bot', text: "⚠️ **Connection Error:** Failed to reach AI service." }]);
+		} finally { setIsTyping(false); }
+	};
+
+	const copyToClipboard = (text: string, id: string | number) => {
+		navigator.clipboard.writeText(text);
+		setCopiedId(id);
+		setTimeout(() => setCopiedId(null), 2000);
 	};
 
 	return (
-		<div className="flex flex-col h-[calc(100vh-80px)] bg-white dark:bg-gray-900 rounded-2xl shadow-sm overflow-hidden border dark:border-gray-800">
-
-			<div className="p-4 border-b dark:border-gray-800 bg-gray-50/50 dark:bg-gray-900/50 backdrop-blur-sm flex items-center gap-3">
-				<div className="bg-gradient-to-tr from-red-500 to-blue-500 p-2 rounded-lg">
-					<Sparkles className="text-white w-5 h-5" />
-				</div>
-				<div>
-					<h3 className="font-bold text-gray-800 dark:text-white">AI Assistant</h3>
-					<p className="text-xs text-green-500 font-medium flex items-center gap-1">
-						<span className="w-1.5 h-1.5 rounded-full bg-green-500 animate-pulse" /> Online
-					</p>
-				</div>
-			</div>
-
-			<div className="flex-1 overflow-y-auto p-4 space-y-6 custom-scrollbar">
-				{messages.length === 0 && (
-					<div className="h-full flex flex-col items-center justify-center text-gray-400 space-y-4 opacity-50">
-						<Bot size={64} strokeWidth={1} />
-						<p>Start a conversation...</p>
+		<div className="flex flex-col h-[calc(100vh-60px)] max-w-5xl mx-auto w-full">
+			{/* Header */}
+			{/* <div className="flex items-center justify-between px-4 py-2 border-b dark:border-gray-800 bg-white/50 dark:bg-gray-950/50 backdrop-blur-md sticky top-0 z-10">
+				<div className="flex items-center gap-3">
+					<div className="w-10 h-10 rounded-xl bg-gradient-to-br from-indigo-500 to-purple-600 flex items-center justify-center shadow-lg shadow-indigo-500/20">
+						<Sparkles className="text-white w-5 h-5" />
 					</div>
-				)}
+					<div>
+						<h2 className="font-bold text-gray-900 dark:text-white tracking-tight">VocalAI Assistant</h2>
+					</div>
+				</div>
+			</div> */}
 
-				{messages.map((msg) => (
-					<motion.div
-						initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }}
-						key={msg.id}
-						className={`flex gap-4 ${msg.role === 'user' ? 'flex-row-reverse' : ''}`}
-					>
-						<div className={`w-10 h-10 rounded-full flex items-center justify-center shrink-0 shadow-sm
-                    ${msg.role === 'user' ? 'bg-gray-200 dark:bg-gray-700' : 'bg-blue-600 text-white'}`}
-						>
-							{msg.role === 'user' ? <UserIcon size={20} className="text-gray-600 dark:text-gray-300" /> : <Bot size={20} />}
-						</div>
-
-						<div className={`max-w-[80%] space-y-1`}>
-							<div className={`p-4 rounded-2xl shadow-sm text-sm leading-relaxed overflow-hidden
-                 ${msg.role === 'user'
-									? 'bg-blue-600 text-white rounded-tr-none'
-									: 'bg-white dark:bg-gray-800 border dark:border-gray-700 text-gray-800 dark:text-gray-200 rounded-tl-none'}`}
-							>
-								{msg.image && (
-									<div className="mb-3 rounded-lg overflow-hidden">
-										<img src={msg.image} alt="User upload" className="max-w-full h-auto object-cover" />
-									</div>
-								)}
-								<ReactMarkdown
-									remarkPlugins={[remarkGfm]}
-									components={{
-										p: ({ children }) => <p className="mb-2 last:mb-0">{children}</p>,
-										ul: ({ children }) => <ul className="list-disc pl-5 mb-2">{children}</ul>,
-										ol: ({ children }) => <ol className="list-decimal pl-5 mb-2">{children}</ol>,
-										li: ({ children }) => <li className="mb-1">{children}</li>,
-										strong: ({ children }) => <strong className="font-semibold">{children}</strong>,
-										code: ({ children }) => (
-											<code className="px-1 py-0.5 rounded text-xs">
-												{children}
-											</code>
-										),
-										pre: ({ children }) => (
-											<pre className="bg-gray-900 text-gray-100 p-3 rounded-lg overflow-x-auto text-xs">
-												{children}
-											</pre>
-										)
-									}}
-								>
-									{msg.text}
-								</ReactMarkdown>	
+			{/* Chat Body */}
+			<div className="flex-1 overflow-y-auto px-4 py-8 space-y-8 no-scrollbar">
+				<AnimatePresence initial={false}>
+					{messages.length === 0 ? (
+						<motion.div initial={{ opacity: 0, scale: 0.9 }} animate={{ opacity: 1, scale: 1 }} className="h-full flex flex-col items-center justify-center text-center space-y-6">
+							<div className="relative">
+								<div className="absolute inset-0 bg-indigo-500/20 blur-3xl rounded-full" />
+								<Bot size={80} className="relative text-indigo-500 dark:text-indigo-400 opacity-80" strokeWidth={1.5} />
 							</div>
-							{msg.role === 'bot' && msg.summary && (
-								<div className="text-[10px] text-gray-400 pl-2">Summary: {msg.summary}</div>
-							)}
-						</div>
-					</motion.div>
-				))}
+							<div className="space-y-2">
+								<h3 className="text-2xl font-bold dark:text-white">Namaste, {user.username}</h3>
+								<p className="text-gray-500 dark:text-gray-400 max-w-sm">I can help you translate, summarize, or chat in 11 Indian languages. What's on your mind?</p>
+							</div>
+						</motion.div>
+					) : (
+						messages.map((msg) => (
+							<motion.div
+								key={msg.id}
+								initial={{ opacity: 0, y: 20 }}
+								animate={{ opacity: 1, y: 0 }}
+								className={`flex gap-4 ${msg.role === 'user' ? 'flex-row-reverse' : 'flex-row'}`}
+							>
+								{/* Avatar */}
+								<div className={`w-10 h-10 rounded-full flex items-center justify-center shrink-0 border ${msg.role === 'user' ? 'bg-white dark:bg-gray-800 border-gray-200 dark:border-gray-700' : 'bg-indigo-600 border-transparent text-white'}`}>
+									{msg.role === 'user' ? <UserIcon size={18} /> : <Zap size={18} />}
+								</div>
+
+								{/* Content */}
+								<div className={`flex flex-col space-y-2 max-w-[80%] ${msg.role === 'user' ? 'items-end' : 'items-start'}`}>
+									<div className={`relative group px-5 py-4 rounded-3xl shadow-sm leading-relaxed ${msg.role === 'user'
+											? 'bg-indigo-600 text-white rounded-tr-none'
+											: 'bg-white dark:bg-gray-800 border dark:border-gray-700 text-gray-800 dark:text-gray-200 rounded-tl-none'
+										}`}>
+										{msg.image && <img src={msg.image} className="rounded-xl mb-4 border dark:border-gray-700 max-h-64 object-contain bg-black" />}
+
+										<div className="prose prose-sm dark:prose-invert max-w-none">
+											<ReactMarkdown
+												remarkPlugins={[remarkGfm]}
+												components={{
+													code: ({ children }) => <code className="bg-black/10 dark:bg-white/10 px-1.5 py-0.5 rounded text-indigo-400 font-mono text-xs">{children}</code>,
+													pre: ({ children }) => <pre className="bg-gray-950 text-gray-100 p-4 rounded-xl overflow-x-auto my-3 border border-gray-800 shadow-inner">{children}</pre>,
+													table: ({ children }) => <div className="overflow-x-auto my-4"><table className="min-w-full border dark:border-gray-700 divide-y dark:divide-gray-700">{children}</table></div>,
+													th: ({ children }) => <th className="px-3 py-2 bg-gray-50 dark:bg-gray-900 text-left text-xs font-bold uppercase">{children}</th>,
+													td: ({ children }) => <td className="px-3 py-2 border-t dark:border-gray-700 text-xs">{children}</td>,
+												}}
+											>
+												{msg.text}
+											</ReactMarkdown>
+										</div>
+
+										{/* Copy Button */}
+										<button
+											onClick={() => copyToClipboard(msg.text, msg.id)}
+											className={`absolute top-2 ${msg.role === 'user' ? '-left-10' : '-right-10'} p-2 opacity-0 group-hover:opacity-100 transition-opacity text-gray-400 hover:text-indigo-500`}
+										>
+											{copiedId === msg.id ? <Check size={16} className="text-green-500" /> : <Copy size={16} />}
+										</button>
+									</div>
+									{msg.role === 'bot' && msg.summary && <span className="text-[10px] text-gray-400 font-medium px-2 flex items-center gap-1"><Sparkles size={10} /> {msg.summary}</span>}
+								</div>
+							</motion.div>
+						))
+					)}
+				</AnimatePresence>
 
 				{isTyping && (
 					<motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="flex gap-4">
-						<div className="w-10 h-10 rounded-full bg-blue-600 flex items-center justify-center shrink-0">
-							<Bot size={20} className="text-white" />
-						</div>
-						<div className="bg-gray-100 dark:bg-gray-800 p-4 rounded-2xl rounded-tl-none border dark:border-gray-700 flex items-center gap-2">
-							<span className="w-2 h-2 bg-gray-400 rounded-full animate-bounce" />
-							<span className="w-2 h-2 bg-gray-400 rounded-full animate-bounce delay-100" />
-							<span className="w-2 h-2 bg-gray-400 rounded-full animate-bounce delay-200" />
+						<div className="w-10 h-10 rounded-full bg-indigo-600 flex items-center justify-center text-white"><Loader2 size={18} className="animate-spin" /></div>
+						<div className="bg-gray-100 dark:bg-gray-800 px-6 py-4 rounded-3xl rounded-tl-none border dark:border-gray-700">
+							<div className="flex gap-1.5">
+								{[0, 1, 2].map(i => <motion.div key={i} animate={{ y: [0, -5, 0] }} transition={{ repeat: Infinity, duration: 0.6, delay: i * 0.1 }} className="w-1.5 h-1.5 bg-indigo-400 rounded-full" />)}
+							</div>
 						</div>
 					</motion.div>
 				)}
 				<div ref={scrollRef} />
 			</div>
 
-			<div className="p-4 bg-white dark:bg-gray-900 border-t dark:border-gray-800">
-				{selectedImage && (
-					<div className="mb-4 relative w-fit">
-						<div className="relative rounded-xl overflow-hidden border dark:border-gray-700 shadow-md">
-							<img src={selectedImage} alt="Preview" className="h-20 w-auto object-cover" />
+			{/* Input Form */}
+			<div className="px-6 py-6">
+				<div className="relative max-w-4xl mx-auto">
+					{selectedImage && (
+						<motion.div initial={{ y: 20, opacity: 0 }} animate={{ y: 0, opacity: 1 }} className="absolute bottom-full mb-4 left-0">
+							<div className="relative group">
+								<img src={selectedImage} className="h-32 w-32 object-cover rounded-2xl border-2 border-indigo-500 shadow-2xl bg-black" />
+								<button onClick={() => setSelectedImage(null)} className="absolute -top-2 -right-2 bg-red-500 text-white rounded-full p-1.5 shadow-lg hover:scale-110 transition-transform">
+									<X size={14} />
+								</button>
+							</div>
+						</motion.div>
+					)}
+
+					<form onSubmit={handleSend} className="relative flex items-center group">
+						<input type="file" accept="image/*" ref={fileInputRef} onChange={(e) => {
+							const file = e.target.files?.[0];
+							if (file) {
+								const reader = new FileReader();
+								reader.onloadend = () => setSelectedImage(reader.result as string);
+								reader.readAsDataURL(file);
+							}
+						}} className="hidden" />
+
+						<div className="flex-1 relative flex items-center bg-white dark:bg-gray-800 border-2 border-gray-100 dark:border-gray-700 rounded-3xl transition-all group-focus-within:border-indigo-500/50 group-focus-within:shadow-2xl group-focus-within:shadow-indigo-500/10 px-2">
+							<button type="button" onClick={() => fileInputRef.current?.click()} className="p-3 text-gray-400 hover:text-indigo-500 transition-colors">
+								<ImageIcon size={22} />
+							</button>
+
+							<input
+								value={input}
+								onChange={(e) => setInput(e.target.value)}
+								placeholder="Message Assistant in Hindi, Bengali..."
+								className="flex-1 bg-transparent py-4 px-2 outline-none dark:text-white placeholder:text-gray-400 text-sm"
+							/>
+
+							<button
+								type="submit"
+								disabled={(!input.trim() && !selectedImage) || isTyping}
+								className="p-2.5 bg-indigo-600 hover:bg-indigo-700 disabled:bg-gray-300 dark:disabled:bg-gray-800 text-white rounded-2xl transition-all shadow-lg shadow-indigo-500/30 m-1.5"
+							>
+								<Send size={20} />
+							</button>
 						</div>
-						<button
-							onClick={() => { setSelectedImage(null); if (fileInputRef.current) fileInputRef.current.value = ""; }}
-							className="absolute -top-2 -right-2 bg-red-500 text-white rounded-full p-1 hover:bg-red-600 transition-colors shadow-sm"
-						>
-							<X size={12} />
-						</button>
-					</div>
-				)}
-
-				<form onSubmit={handleSend} className="relative max-w-6xl mx-auto flex items-center gap-2">
-					<input
-						type="file"
-						accept="image/*"
-						ref={fileInputRef}
-						onChange={handleImageSelect}
-						className="hidden"
-					/>
-
-					<button
-						type="button"
-						onClick={() => fileInputRef.current?.click()}
-						className="p-3 text-gray-500 hover:text-blue-600 hover:bg-gray-100 dark:hover:bg-gray-800 rounded-xl transition-all"
-						title="Upload Image"
-					>
-						<ImageIcon size={20} />
-					</button>
-
-					<input
-						value={input}
-						onChange={(e) => setInput(e.target.value)}
-						placeholder="Type your message..."
-						className="w-full px-5 py-4 rounded-xl bg-gray-100 dark:bg-gray-800 border-transparent focus:bg-white dark:focus:bg-gray-900 focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none transition-all dark:text-white"
-					/>
-
-					<button
-						type="submit"
-						disabled={(!input.trim() && !selectedImage) || isTyping}
-						className="p-3 bg-blue-600 hover:bg-blue-700 disabled:bg-gray-400 text-white rounded-xl transition-all shadow-lg disabled:shadow-none"
-					>
-						{isTyping ? <Loader2 size={20} className="animate-spin" /> : <Send size={20} />}
-					</button>
-				</form>
+					</form>
+				</div>
 			</div>
 		</div>
 	);
