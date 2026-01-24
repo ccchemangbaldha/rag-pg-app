@@ -1,20 +1,21 @@
 import { useState, useEffect, useRef } from "react";
 import { motion, AnimatePresence } from "framer-motion";
-import { Send, Bot, User as UserIcon, Loader2, Sparkles, Image as ImageIcon, X, Zap, Copy, Check, ShoppingCart, Maximize, Database } from "lucide-react";
+import { Send, Bot, User as UserIcon, Loader2, Sparkles, Image as ImageIcon, X, Zap, Copy, Check, ShoppingCart, Database, Star, Tag } from "lucide-react";
 import { api } from "../lib/api";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 
+// Updated to match your new Table Schema (snake_case)
 interface Product {
-	productId: number;
-	productName: string;
+	product_id: number;
+	product_name: string;
+	brand: string;
 	category: string;
 	price: number;
-	imageUrl?: string;
-	widthCm?: number;
-	depthCm?: number;
-	heightCm?: number;
-	stock?: number;
+	rating: number;
+	description: string;
+	mfr_cost?: number;
+	image_url?: string; // Optional if you decide to join it later
 }
 
 interface Message {
@@ -24,10 +25,10 @@ interface Message {
 	image?: string;
 	summary?: string;
 	products?: Product[];
-	sql?: string; // Added to store the SQL query
+	sql?: string;
 }
 
-const FALLBACK_IMAGE = "https://images.unsplash.com/photo-1516975080664-ed2fc6a32937?q=80&w=400&auto=format&fit=crop";
+const FALLBACK_IMAGE = "https://images.unsplash.com/photo-1555041469-a586c61ea9bc?q=80&w=400&auto=format&fit=crop";
 
 export const ChatInterface = ({ user, chatId, onNewMessage }: { user: any, chatId: string | null, onNewMessage: () => void }) => {
 	const [messages, setMessages] = useState<Message[]>([]);
@@ -68,7 +69,7 @@ export const ChatInterface = ({ user, chatId, onNewMessage }: { user: any, chatI
 					text: h.botOutput,
 					summary: h.summary,
 					products: h.metadata,
-					sql: h.sql // Assuming backend returns the 'sql' column
+					sql: h.sql
 				});
 			});
 			setMessages(formatted);
@@ -108,12 +109,11 @@ export const ChatInterface = ({ user, chatId, onNewMessage }: { user: any, chatI
 				id: tempId + "_bot",
 				role: 'bot',
 				text: response.botOutput,
-				summary: response.action, // Note: ai.py now returns simple JSON, verify if 'action' is still sent or adapt logic
+				summary: response.action,
 				products: response.results,
-				sql: response.sql // Capture SQL from response
+				sql: response.sql
 			}]);
 
-			// Pass sql to createHistory (ensure backend accepts this field)
 			await api.createHistory({
 				userId: user.userId,
 				chatId: currentChatId,
@@ -155,7 +155,7 @@ export const ChatInterface = ({ user, chatId, onNewMessage }: { user: any, chatI
 								</div>
 								<div className="space-y-2">
 									<h3 className="text-2xl font-bold dark:text-white">Namaste, {user.username}</h3>
-									<p className="text-gray-500 dark:text-gray-400 max-w-sm">I can help you find furniture or chat in Indian languages. What's on your mind?</p>
+									<p className="text-gray-500 dark:text-gray-400 max-w-sm">I can analyze your inventory, write SQL, and help you find products. Ask me anything!</p>
 								</div>
 							</motion.div>
 						) : (
@@ -204,29 +204,44 @@ export const ChatInterface = ({ user, chatId, onNewMessage }: { user: any, chatI
 												</div>
 											)}
 
+											{/* Product Cards Grid */}
 											{msg.products && msg.products.length > 0 && (
 												<div className="mt-4 grid grid-cols-1 sm:grid-cols-2 gap-3 not-prose">
 													{msg.products.map((product) => (
-														<div key={product.productId} className="bg-gray-50 dark:bg-gray-900 border dark:border-gray-700 rounded-xl overflow-hidden flex flex-col shadow-sm hover:shadow-md transition-shadow">
-															<div className="h-32 relative bg-gray-200 dark:bg-gray-800">
+														<div key={product.product_id} className="bg-gray-50 dark:bg-gray-900 border dark:border-gray-700 rounded-xl overflow-hidden flex flex-col shadow-sm hover:shadow-md transition-shadow group">
+															{/* Image Section */}
+															<div className="h-32 relative bg-gray-200 dark:bg-gray-800 overflow-hidden">
 																<img
-																	src={product.imageUrl || FALLBACK_IMAGE}
-																	className="w-full h-full object-cover"
-																	alt={product.productName}
+																	src={product.image_url || FALLBACK_IMAGE}
+																	className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500"
+																	alt={product.product_name}
 																	onError={(e: any) => e.target.src = FALLBACK_IMAGE}
 																/>
 																<span className="absolute top-2 right-2 bg-black/60 backdrop-blur-sm text-white text-[10px] font-bold px-2 py-0.5 rounded-full">
 																	${product.price}
 																</span>
+																{product.rating > 0 && (
+																	<span className="absolute bottom-2 left-2 bg-amber-400 text-white text-[9px] font-bold px-1.5 py-0.5 rounded-md flex items-center gap-0.5 shadow-sm">
+																		<Star size={8} fill="currentColor" /> {product.rating}
+																	</span>
+																)}
 															</div>
+
+															{/* Details Section */}
 															<div className="p-3 flex flex-col flex-1">
-																<h4 className="font-semibold text-gray-800 dark:text-gray-200 text-sm truncate" title={product.productName}>
-																	{product.productName}
-																</h4>
-																<div className="text-[10px] text-gray-500 dark:text-gray-400 flex justify-between items-center mt-1 mb-2">
-																	<span className="capitalize">{product.category}</span>
-																	<span className="flex items-center gap-0.5"><Maximize size={10} /> {product.widthCm}cm</span>
+																<div className="text-[10px] font-bold text-emerald-600 dark:text-emerald-400 uppercase tracking-wider mb-0.5">
+																	{product.brand}
 																</div>
+																<h4 className="font-semibold text-gray-800 dark:text-gray-200 text-sm truncate mb-1" title={product.product_name}>
+																	{product.product_name}
+																</h4>
+
+																<div className="flex items-center gap-2 mb-2">
+																	<span className="text-[10px] px-1.5 py-0.5 bg-gray-200 dark:bg-gray-800 text-gray-600 dark:text-gray-400 rounded flex items-center gap-1">
+																		<Tag size={10} /> {product.category}
+																	</span>
+																</div>
+
 																<button className="mt-auto w-full py-1.5 flex items-center justify-center gap-1.5 bg-indigo-100 hover:bg-indigo-200 dark:bg-indigo-900/30 dark:hover:bg-indigo-900/50 text-indigo-700 dark:text-indigo-300 rounded-lg text-xs font-medium transition-colors">
 																	<ShoppingCart size={12} /> View Details
 																</button>
@@ -295,7 +310,7 @@ export const ChatInterface = ({ user, chatId, onNewMessage }: { user: any, chatI
 							<input
 								value={input}
 								onChange={(e) => setInput(e.target.value)}
-								placeholder="Message Assistant..."
+								placeholder="Ask about products, prices, or SQL..."
 								className="flex-1 bg-transparent py-4 px-2 outline-none dark:text-white placeholder:text-gray-400 text-sm"
 							/>
 

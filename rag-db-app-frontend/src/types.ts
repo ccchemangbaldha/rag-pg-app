@@ -7,21 +7,24 @@ export interface User {
 }
 
 export interface Product {
-	productId: number;
-	productName: string;
+	product_id: number;
+	product_name: string;
+	brand: string;
 	category: string;
-	style?: string;
-	color?: string;
-	material?: string;
+	sub_category: string;
+	description: string;
+	color: string;
+	size: string;
+	material: string;
+	gender: string;
+	mfr_cost: number;
+	shipping_charge: number;
 	price: number;
-	// Dimensions are now flattened and match the DB columns exactly
-	widthCm?: number;
-	depthCm?: number;
-	heightCm?: number;
-	stock: number;
-	imageUrl?: string;
-	createdAt?: string;
-	updatedAt?: string;
+	country_of_origin: string;
+	care_instructions: string;
+	warranty_months: number;
+	rating: number;
+	launch_year: number;
 }
 
 export interface HistoryLog {

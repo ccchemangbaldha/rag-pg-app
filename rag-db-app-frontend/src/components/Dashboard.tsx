@@ -1,14 +1,12 @@
 import { useState, useEffect } from "react";
 import { motion, AnimatePresence } from "framer-motion";
-import { Users, Package, Plus, Edit2, Trash2, History, Maximize } from "lucide-react";
+import { Users, Package, Plus, Edit2, Trash2, History, Star, Tag } from "lucide-react";
 import type { User, Product, HistoryLog } from "../types";
 import { api } from "../lib/api";
 import { Modal } from "./ui/Modal";
 import { UserForm } from "./UserForm";
 import { ProductForm } from "./ProductForm";
 import { HistoryViewer } from "./HistoryViewer";
-
-const FALLBACK_IMAGE = "https://images.unsplash.com/photo-1516975080664-ed2fc6a32937?q=80&w=400&auto=format&fit=crop";
 
 export const Dashboard = () => {
 	const [activeTab, setActiveTab] = useState<"users" | "products">("products");
@@ -45,7 +43,8 @@ export const Dashboard = () => {
 	};
 
 	const handleSaveProduct = async (data: any) => {
-		if (data.productId) await api.updateProduct(data.productId, data);
+		// Updated to use product_id
+		if (data.product_id) await api.updateProduct(data.product_id, data);
 		else await api.createProduct(data);
 		loadData(); setModal({ isOpen: false, type: null });
 	};
@@ -108,37 +107,56 @@ export const Dashboard = () => {
 						</div>
 						<div className="grid gap-6 md:grid-cols-2 lg:grid-cols-3">
 							{products.map(product => (
-								<div key={product.productId} className="bg-white dark:bg-gray-900 border dark:border-gray-800 rounded-xl overflow-hidden shadow-sm flex flex-col group">
-									<div className="h-44 bg-gray-100 dark:bg-gray-800 relative overflow-hidden">
-										<img
-											src={product.imageUrl || FALLBACK_IMAGE}
-											className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500"
-											onError={(e: any) => e.target.src = FALLBACK_IMAGE}
-										/>
-										<div className="absolute top-2 left-2 flex gap-1">
-											<span className="bg-black/50 backdrop-blur-md text-white text-[10px] px-2 py-0.5 rounded uppercase font-bold tracking-wider">
-												{product.category}
-											</span>
+								<div key={product.product_id} className="bg-white dark:bg-gray-900 border dark:border-gray-800 rounded-xl p-5 shadow-sm hover:shadow-md transition-all group flex flex-col h-full">
+									{/* Header: Brand & Price */}
+									<div className="flex justify-between items-start mb-3">
+										<div>
+											<div className="text-xs font-semibold text-emerald-600 dark:text-emerald-400 uppercase tracking-wider mb-1">{product.brand}</div>
+											<h3 className="font-bold text-lg dark:text-white leading-tight">{product.product_name}</h3>
+										</div>
+										<div className="flex flex-col items-end">
+											<span className="text-xl font-bold text-gray-900 dark:text-white">${product.price}</span>
+											{product.rating > 0 && (
+												<div className="flex items-center gap-1 text-xs font-medium text-amber-500 bg-amber-50 dark:bg-amber-900/20 px-1.5 py-0.5 rounded">
+													<Star size={10} fill="currentColor" /> {product.rating}
+												</div>
+											)}
 										</div>
 									</div>
-									<div className="p-4 flex-1 flex flex-col">
-										<div className="flex justify-between mb-2 items-start">
-											<div>
-												<h3 className="font-bold dark:text-white group-hover:text-emerald-500 transition-colors">{product.productName}</h3>
-												<p className="text-xs text-gray-500 dark:text-gray-400 capitalize">{product.style} • {product.material}</p>
-											</div>
-											<span className="text-emerald-600 dark:text-emerald-400 font-bold bg-emerald-50 dark:bg-emerald-900/20 px-2 py-0.5 rounded text-sm">${product.price}</span>
-										</div>
 
-										<div className="flex items-center gap-3 mt-2 mb-4 text-[11px] text-gray-400 border-t border-gray-100 dark:border-gray-800 pt-3">
-											<div className="flex items-center gap-1"><Maximize size={12} /> {product.widthCm}x{product.depthCm}x{product.heightCm}cm</div>
-											<div className="ml-auto">Stock: <span className={product.stock && product.stock > 0 ? "text-emerald-500" : "text-red-500"}>{product.stock}</span></div>
-										</div>
+									{/* Tags */}
+									<div className="flex flex-wrap gap-2 mb-4">
+										<span className="text-xs px-2 py-1 bg-gray-100 dark:bg-gray-800 text-gray-600 dark:text-gray-300 rounded flex items-center gap-1">
+											<Tag size={12} /> {product.category}
+										</span>
+										{product.sub_category && (
+											<span className="text-xs px-2 py-1 bg-gray-100 dark:bg-gray-800 text-gray-600 dark:text-gray-300 rounded">
+												{product.sub_category}
+											</span>
+										)}
+									</div>
 
-										<div className="mt-auto flex gap-2">
-											<button onClick={() => setModal({ isOpen: true, type: 'product', data: product })} className="flex-1 flex items-center justify-center gap-2 py-2 text-blue-600 bg-blue-50 hover:bg-blue-100 dark:bg-blue-900/20 dark:text-blue-400 rounded-lg transition-colors"><Edit2 size={16} /> Edit</button>
-											<button onClick={() => handleDeleteProduct(product.productId)} className="px-3 py-2 text-red-600 bg-red-50 hover:bg-red-100 dark:bg-red-900/20 rounded-lg transition-colors"><Trash2 size={16} /></button>
-										</div>
+									{/* Description Preview */}
+									<p className="text-sm text-gray-500 dark:text-gray-400 mb-4 line-clamp-2 flex-1">
+										{product.description || "No description available."}
+									</p>
+
+									{/* Footer Info */}
+									<div className="grid grid-cols-2 gap-2 text-xs text-gray-500 dark:text-gray-400 border-t dark:border-gray-800 pt-3 mb-4">
+										<div>Color: <span className="text-gray-700 dark:text-gray-300">{product.color || "N/A"}</span></div>
+										<div>Size: <span className="text-gray-700 dark:text-gray-300">{product.size || "N/A"}</span></div>
+										<div>Origin: <span className="text-gray-700 dark:text-gray-300">{product.country_of_origin || "N/A"}</span></div>
+										<div>Launch: <span className="text-gray-700 dark:text-gray-300">{product.launch_year || "N/A"}</span></div>
+									</div>
+
+									{/* Actions */}
+									<div className="flex gap-2 mt-auto">
+										<button onClick={() => setModal({ isOpen: true, type: 'product', data: product })} className="flex-1 flex items-center justify-center gap-2 py-2 text-blue-600 bg-blue-50 hover:bg-blue-100 dark:bg-blue-900/20 dark:text-blue-400 rounded-lg transition-colors font-medium text-sm">
+											<Edit2 size={16} /> Edit
+										</button>
+										<button onClick={() => handleDeleteProduct(product.product_id)} className="px-3 py-2 text-red-600 bg-red-50 hover:bg-red-100 dark:bg-red-900/20 rounded-lg transition-colors">
+											<Trash2 size={16} />
+										</button>
 									</div>
 								</div>
 							))}
