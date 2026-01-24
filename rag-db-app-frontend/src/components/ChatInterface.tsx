@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef } from "react";
 import { motion, AnimatePresence } from "framer-motion";
-import { Send, Bot, User as UserIcon, Loader2, Sparkles, Image as ImageIcon, X, Zap, Copy, Check, Database } from "lucide-react";
+import { Send, Bot, User as UserIcon, Loader2, Sparkles, Zap, Copy, Check, Database } from "lucide-react";
 import { api } from "../lib/api";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
@@ -8,15 +8,15 @@ import { ProductGrid } from "./productGrid";
 import type { Message } from "../types";
 
 export const ChatInterface = ({ user, chatId, onNewMessage }: { user: any, chatId: string | null, onNewMessage: () => void }) => {
+	// State
 	const [messages, setMessages] = useState<Message[]>([]);
 	const [input, setInput] = useState("");
 	const [isTyping, setIsTyping] = useState(false);
-	const [selectedImage, setSelectedImage] = useState<string | null>(null);
 	const [copiedId, setCopiedId] = useState<string | number | null>(null);
 
 	const scrollRef = useRef<HTMLDivElement>(null);
-	const fileInputRef = useRef<HTMLInputElement>(null);
 
+	// Effects
 	useEffect(() => {
 		if (chatId) loadChatMessages(chatId);
 		else setMessages([]);
@@ -49,18 +49,17 @@ export const ChatInterface = ({ user, chatId, onNewMessage }: { user: any, chatI
 
 	const handleSend = async (e: React.FormEvent) => {
 		e.preventDefault();
-		if (!input.trim() && !selectedImage) return;
+		if (!input.trim()) return;
 
 		const userText = input;
-		const userImage = selectedImage;
 		const currentChatId = chatId || `chat-${Date.now()}`;
 		const isNewChat = !chatId;
 
 		setInput("");
-		setSelectedImage(null);
 
 		const tempId = Date.now().toString();
-		setMessages(prev => [...prev, { id: tempId, role: 'user', text: userText, image: userImage || undefined }]);
+		// Removed image property
+		setMessages(prev => [...prev, { id: tempId, role: 'user', text: userText }]);
 		setIsTyping(true);
 
 		try {
@@ -68,7 +67,6 @@ export const ChatInterface = ({ user, chatId, onNewMessage }: { user: any, chatI
 				userId: user.userId,
 				chatId: currentChatId,
 				prompt: userText,
-				imageUrl: userImage as any,
 				summary: messages.length > 0 ? messages[messages.length - 1].summary : ""
 			});
 
@@ -84,7 +82,7 @@ export const ChatInterface = ({ user, chatId, onNewMessage }: { user: any, chatI
 			await api.createHistory({
 				userId: user.userId,
 				chatId: currentChatId,
-				userInput: userImage ? `[Image] ${userText}` : userText,
+				userInput: userText, // Simplified user input
 				botOutput: response.botOutput,
 				summary: response.action,
 				metadata: response.results,
@@ -138,7 +136,6 @@ export const ChatInterface = ({ user, chatId, onNewMessage }: { user: any, chatI
 										? 'bg-indigo-600 text-white rounded-tr-none'
 										: 'bg-white dark:bg-gray-800 border dark:border-gray-700 text-gray-800 dark:text-gray-200 rounded-tl-none'
 										}`}>
-										{msg.image && <img src={msg.image} className="rounded-xl mb-4 border dark:border-gray-700 max-h-64 object-contain bg-black" alt="User upload" />}
 
 										{/* Text Render */}
 										<div className="prose prose-sm dark:prose-invert max-w-none">
@@ -168,7 +165,7 @@ export const ChatInterface = ({ user, chatId, onNewMessage }: { user: any, chatI
 											</div>
 										)}
 
-										{/* Product Cards Grid (With Pagination) */}
+										{/* Product Cards Grid */}
 										{msg.products && msg.products.length > 0 && (
 											<ProductGrid products={msg.products} />
 										)}
@@ -204,42 +201,18 @@ export const ChatInterface = ({ user, chatId, onNewMessage }: { user: any, chatI
 			{/* Input Form */}
 			<div className="px-6 py-6">
 				<div className="relative max-w-4xl mx-auto">
-					{selectedImage && (
-						<motion.div initial={{ y: 20, opacity: 0 }} animate={{ y: 0, opacity: 1 }} className="absolute bottom-full mb-4 left-0">
-							<div className="relative group">
-								<img src={selectedImage} className="h-32 w-32 object-cover rounded-2xl border-2 border-indigo-500 shadow-2xl bg-black" alt="Preview" />
-								<button onClick={() => setSelectedImage(null)} className="absolute -top-2 -right-2 bg-red-500 text-white rounded-full p-1.5 shadow-lg hover:scale-110 transition-transform">
-									<X size={14} />
-								</button>
-							</div>
-						</motion.div>
-					)}
-
 					<form onSubmit={handleSend} className="relative flex items-center group">
-						<input type="file" accept="image/*" ref={fileInputRef} onChange={(e) => {
-							const file = e.target.files?.[0];
-							if (file) {
-								const reader = new FileReader();
-								reader.onloadend = () => setSelectedImage(reader.result as string);
-								reader.readAsDataURL(file);
-							}
-						}} className="hidden" />
-
 						<div className="flex-1 relative flex items-center bg-white dark:bg-gray-800 border-2 border-gray-100 dark:border-gray-700 rounded-3xl transition-all group-focus-within:border-indigo-500/50 group-focus-within:shadow-2xl group-focus-within:shadow-indigo-500/10 px-2">
-							<button type="button" onClick={() => fileInputRef.current?.click()} className="p-3 text-gray-400 hover:text-indigo-500 transition-colors">
-								<ImageIcon size={22} />
-							</button>
-
 							<input
 								value={input}
 								onChange={(e) => setInput(e.target.value)}
 								placeholder="Ask about products, prices, or SQL..."
-								className="flex-1 bg-transparent py-4 px-2 outline-none dark:text-white placeholder:text-gray-400 text-sm"
+								className="flex-1 bg-transparent py-4 px-4 outline-none dark:text-white placeholder:text-gray-400 text-sm"
 							/>
 
 							<button
 								type="submit"
-								disabled={(!input.trim() && !selectedImage) || isTyping}
+								disabled={!input.trim() || isTyping}
 								className="p-2.5 bg-indigo-600 hover:bg-indigo-700 disabled:bg-gray-300 dark:disabled:bg-gray-800 text-white rounded-2xl transition-all shadow-lg shadow-indigo-500/30 m-1.5"
 							>
 								<Send size={20} />
