@@ -1,32 +1,34 @@
+import json
 from fastapi import APIRouter
 from pydantic import BaseModel
-from typing import Optional
+from typing import Optional, List, Dict, Any
 from lib.connection import get_connection
 from utils.response import send
 
 router = APIRouter(prefix="/history")
 
-# --- Pydantic Model ---
 class HistoryCreate(BaseModel):
     userId: int
-    chatId: str  # Added to identify the specific conversation
+    chatId: str
     userInput: str
     botOutput: str
     summary: Optional[str] = None
-
-# --- Routes ---
+    metadata: Optional[List[Dict[str, Any]]] = None
+    sql: Optional[str] = None
 
 @router.post("/")
 def create_history(history: HistoryCreate):
     try:
         conn = get_connection()
         cur = conn.cursor()
-        # Updated to include chatId
+        
+        meta_json = json.dumps(history.metadata) if history.metadata else None
+
         cur.execute("""
-            INSERT INTO "history"("userId", "chatId", "userInput", "botOutput", "summary")
-            VALUES (%s, %s, %s, %s, %s) 
+            INSERT INTO "history"("userId", "chatId", "userInput", "botOutput", "summary", "metadata", "sql")
+            VALUES (%s, %s, %s, %s, %s, %s, %s) 
             RETURNING "historyId";
-        """, (history.userId, history.chatId, history.userInput, history.botOutput, history.summary))
+        """, (history.userId, history.chatId, history.userInput, history.botOutput, history.summary, meta_json, history.sql))
         
         hid = cur.fetchone()[0]
         conn.commit()
@@ -39,14 +41,9 @@ def create_history(history: HistoryCreate):
 
 @router.get("/list/{userId}")
 def get_chat_list(userId: int):
-    """
-    Returns a list of unique chat sessions for the user's sidebar.
-    Shows the first user input as the title.
-    """
     try:
         conn = get_connection()
         cur = conn.cursor()
-        # Get the first message of every unique chatId for this user
         cur.execute("""
             SELECT DISTINCT ON ("chatId") "chatId", "userInput", "createdAt"
             FROM "history" 
@@ -71,15 +68,11 @@ def get_chat_list(userId: int):
 
 @router.get("/{chatId}")
 def get_chat_messages(chatId: str):
-    """
-    Returns all messages for a specific conversation.
-    """
     try:
         conn = get_connection()
         cur = conn.cursor()
-        # Fetch messages for specific chatId sorted by time
         cur.execute("""
-            SELECT "historyId", "userId", "userInput", "botOutput", "summary", "createdAt"
+            SELECT "historyId", "userId", "userInput", "botOutput", "summary", "createdAt", "metadata", "sql"
             FROM "history" 
             WHERE "chatId" = %s 
             ORDER BY "createdAt" ASC;
@@ -95,7 +88,9 @@ def get_chat_messages(chatId: str):
                 "userInput": r[2],
                 "botOutput": r[3],
                 "summary": r[4],
-                "createdAt": str(r[5])
+                "createdAt": str(r[5]),
+                "metadata": r[6],
+                "sql": r[7]
             })
             
         cur.close()
@@ -128,9 +123,6 @@ def delete_history(historyId: int):
 
 @router.delete("/chat/{chatId}")
 def delete_chat_session(chatId: str):
-    """
-    Deletes all messages associated with a specific chatId.
-    """
     try:
         conn = get_connection()
         cur = conn.cursor()

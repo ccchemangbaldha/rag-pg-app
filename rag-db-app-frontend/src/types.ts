@@ -31,5 +31,6 @@ export interface HistoryLog {
 	userInput: string;
 	botOutput: string;
 	summary: string;
+	metadata: any;
 	createdAt: string;
 }
