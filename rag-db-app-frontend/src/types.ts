@@ -6,6 +6,16 @@ export interface User {
 	createdAt?: string;
 }
 
+export interface Message {
+	id: string | number;
+	role: 'user' | 'bot';
+	text: string;
+	image?: string;
+	summary?: string;
+	products?: Product[];
+	sql?: string;
+}
+
 export interface Product {
 	product_id: number;
 	product_name: string;
