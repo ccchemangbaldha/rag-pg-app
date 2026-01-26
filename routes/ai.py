@@ -6,32 +6,31 @@ from typing import Optional, List, Dict, Any
 from openai import OpenAI
 from utils.response import send
 from lib.connection import get_connection
+import psycopg2
 
 router = APIRouter(prefix="/ai")
-
 client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
 
-# Updated Schema Context matching your new table definition
 SCHEMA_CONTEXT = """
-CREATE TABLE "products" (
-  "product_id"        BIGSERIAL PRIMARY KEY,
-  "product_name"      TEXT NOT NULL,
-  "brand"             TEXT,
-  "category"          TEXT NOT NULL,
-  "sub_category"      TEXT,
-  "description"       TEXT,
-  "color"             TEXT,
-  "size"              TEXT,
-  "material"          TEXT,
-  "gender"            TEXT,
-  "mfr_cost"          NUMERIC(10,2),
-  "shipping_charge"   NUMERIC(10,2),
-  "price"             NUMERIC(10,2) NOT NULL,
-  "country_of_origin" TEXT,
-  "care_instructions" TEXT,
-  "warranty_months"   INTEGER,
-  "rating"            NUMERIC(3,1),
-  "launch_year"       INTEGER
+CREATE TABLE products (
+    product_id        BIGSERIAL PRIMARY KEY,
+    product_name      TEXT NOT NULL,
+    brand             TEXT NOT NULL,
+    category          TEXT NOT NULL,
+    sub_category      TEXT,
+    price             NUMERIC(10,2) NOT NULL,
+    rating            NUMERIC(3,1) DEFAULT 0.0,
+    created_at        TIMESTAMPTZ DEFAULT NOW()
+);
+
+CREATE TABLE sales (
+    salesId SERIAL PRIMARY KEY,
+    sale_date DATE,
+    product_id VARCHAR(50),
+    category VARCHAR(100),
+    sales INTEGER,
+    mfr_cost NUMERIC(12,2),
+    price NUMERIC(12,2)
 );
 """
 
@@ -42,27 +41,47 @@ class AIRequest(BaseModel):
     chatId: Optional[str] = None
     imageUrl: Optional[str] = None
 
+def generate_ai_response(messages):
+    completion = client.chat.completions.create(
+        model="gpt-4o",
+        messages=messages,
+        response_format={"type": "json_object"},
+        temperature=0
+    )
+    return json.loads(completion.choices[0].message.content)
+
 @router.post("/chat")
 def ai_chat(req: AIRequest):
     try:
         system_prompt = f"""
-        You are a smart retail product database assistant. 
-        Your task is to analyze the user request and generate a valid PostgreSQL SELECT query if the request is related to the product schema provided below.
-
-        Schema:
+        You are a smart ecommerce analytics assistant and data visualizer.
+        
+        Database Schema:
         {SCHEMA_CONTEXT}
 
-        Instructions:
-        1. Analyze the user's input and the conversation summary.
-        2. If the user asks for products (e.g., "Show me Nike shoes", "summer clothes for men under $50", "highly rated electronics"), generate a SQL SELECT query.
-        3. Use ILIKE for text matching to be case-insensitive (e.g., "brand" ILIKE '%nike%').
-        4. If the user's input is NOT related to products (e.g., "Write a poem", "What is the capital of France"), do NOT generate a query.
-        5. Always generate a natural language response ("message") to accompany the result or to explain why you cannot help.
+        Responsibilities:
+        1. Generate executable PostgreSQL 'SELECT' queries based on the user prompt.
+        2. If the data is suitable for visualization (trends, comparisons, distributions), generate a 'chartConfig'.
+        3. 'chartConfig' must be a JSON object compatible with Recharts (React).
+        
+        Response Format (JSON):
+        {{
+            "sql": "SELECT ...",
+            "message": "Brief explanation",
+            "chartConfig": {{
+                "type": "bar" | "line" | "pie" | "area",
+                "xAxisKey": "column_name_for_x_axis",
+                "series": [
+                    {{ "dataKey": "column_name_for_y_axis", "name": "Label", "color": "#8884d8" }}
+                ],
+                "title": "Chart Title"
+            }} OR null
+        }}
 
-        Output Format:
-        You must return a valid JSON object with exactly two keys:
-        - "sql": (string | null) The SQL query if relevant, otherwise null.
-        - "message": (string) A helpful message for the user. 
+        Rules:
+        - Use JOIN products ON products.product_id = CAST(sales.product_id AS INT) when needed.
+        - For time-series, cast dates appropriately.
+        - If query is not about data (e.g., "hello"), sql and chartConfig should be null.
         """
 
         messages = [
@@ -70,53 +89,66 @@ def ai_chat(req: AIRequest):
             {"role": "user", "content": f"Summary: {req.summary}\nPrompt: {req.prompt}"}
         ]
 
-        # Pass image if available (for multimodal models like gpt-4o)
         if req.imageUrl:
             messages[1]["content"] = [
                 {"type": "text", "text": f"Summary: {req.summary}\nPrompt: {req.prompt}"},
                 {"type": "image_url", "image_url": {"url": req.imageUrl}}
             ]
 
-        completion = client.chat.completions.create(
-            model="gpt-4o",
-            messages=messages,
-            response_format={"type": "json_object"},
-            temperature=0
-        )
+        attempts = 0
+        max_retries = 2
+        
+        while attempts <= max_retries:
+            ai_response = generate_ai_response(messages)
+            generated_sql = ai_response.get("sql")
+            bot_message = ai_response.get("message")
+            chart_config = ai_response.get("chartConfig")
+            results = []
 
-        response_content = completion.choices[0].message.content
-        ai_response = json.loads(response_content)
+            if not generated_sql:
+                return send(True, "Success", {
+                    "botOutput": bot_message,
+                    "sql": None,
+                    "results": [],
+                    "chartConfig": None,
+                    "action": "chat"
+                })
 
-        generated_sql = ai_response.get("sql")
-        bot_message = ai_response.get("message")
-        results = []
-
-        if generated_sql:
-            # Basic security check
             if not generated_sql.strip().lower().startswith("select"):
-                return send(False, "Security Violation: Only SELECT queries are allowed.")
+                return send(False, "Security violation: only SELECT allowed.")
 
-            conn = get_connection()
-            cur = conn.cursor()
-            
-            # Execute the generated SQL
-            cur.execute(generated_sql)
-            rows = cur.fetchall()
-            
-            # Map results to dictionary
-            columns = [desc[0] for desc in cur.description]
-            results = [dict(zip(columns, row)) for row in rows]
-            
-            cur.close()
-            conn.close()
+            try:
+                conn = get_connection()
+                cur = conn.cursor()
+                cur.execute(generated_sql)
+                rows = cur.fetchall()
+                cols = [d[0] for d in cur.description]
+                results = [dict(zip(cols, r)) for r in rows]
+                cur.close()
+                conn.close()
 
-        return send(True, "Success", {
-            "botOutput": bot_message,
-            "sql": generated_sql,
-            "results": results,
-            "action": "search_result" if generated_sql else "chat"
-        })
+                return send(True, "Success", {
+                    "botOutput": bot_message,
+                    "sql": generated_sql,
+                    "results": results,
+                    "chartConfig": chart_config,
+                    "action": "search_result"
+                })
+
+            except Exception as db_err:
+                attempts += 1
+                error_msg = str(db_err)
+                print(f"SQL Execution Failed (Attempt {attempts}): {error_msg}")
+                
+                if attempts > max_retries:
+                    return send(False, "Auto-healing failed after retries.", error_msg)
+                
+                messages.append({"role": "assistant", "content": json.dumps(ai_response)})
+                messages.append({
+                    "role": "user", 
+                    "content": f"The SQL you generated failed with this error: {error_msg}. Please correct the SQL and regenerate the JSON response."
+                })
 
     except Exception as e:
-        print(f"AI Error: {str(e)}")
-        return send(False, "AI Service Failed", str(e))
+        print("AI System Error:", str(e))
+        return send(False, "AI Failed", str(e))

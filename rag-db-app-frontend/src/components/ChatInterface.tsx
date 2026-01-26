@@ -5,6 +5,18 @@ import { api } from "../lib/api";
 import { ChatMessage } from "./ChatMessage";
 import type { Message } from "../types";
 
+// Helper to safely parse chartConfig whether it's a string or already an object
+const parseChartConfig = (config: any) => {
+	if (!config) return null;
+	if (typeof config === 'object') return config; // Already an object
+	try {
+		return JSON.parse(config); // Parse string to object
+	} catch (e) {
+		console.error("Failed to parse chart config:", e);
+		return null;
+	}
+};
+
 export const ChatInterface = ({ user, chatId, onNewMessage }: { user: any, chatId: string | null, onNewMessage: () => void }) => {
 	const [messages, setMessages] = useState<Message[]>([]);
 	const [input, setInput] = useState("");
@@ -36,7 +48,9 @@ export const ChatInterface = ({ user, chatId, onNewMessage }: { user: any, chatI
 						text: h.botOutput,
 						summary: h.summary,
 						products: h.metadata,
-						sql: h.sql
+						sql: h.sql,
+						// FIX: Parse the config here
+						chartConfig: parseChartConfig(h.chartConfig)
 					}
 				]);
 
@@ -83,7 +97,8 @@ export const ChatInterface = ({ user, chatId, onNewMessage }: { user: any, chatI
 				text: response.botOutput,
 				summary: response.action,
 				products: response.results,
-				sql: response.sql
+				sql: response.sql,
+				chartConfig: response.chartConfig // This is usually already an object from axios/fetch
 			}]);
 
 			await api.createHistory({
@@ -93,7 +108,8 @@ export const ChatInterface = ({ user, chatId, onNewMessage }: { user: any, chatI
 				botOutput: response.botOutput,
 				summary: response.action,
 				metadata: response.results,
-				sql: response.sql
+				sql: response.sql,
+				chartConfig: response.chartConfig
 			});
 
 			if (isNewChat) onNewMessage();
@@ -127,7 +143,7 @@ export const ChatInterface = ({ user, chatId, onNewMessage }: { user: any, chatI
 								</div>
 								<div className="space-y-2">
 									<h3 className="text-2xl font-bold dark:text-white">Namaste, {user.username}</h3>
-									<p className="text-gray-500 dark:text-gray-400 max-w-sm">I can analyze your inventory, write SQL, and help you find products. Ask me anything!</p>
+									<p className="text-gray-500 dark:text-gray-400 max-w-sm">I can analyze your inventory, write SQL, and visualize your data. Ask me anything!</p>
 								</div>
 							</motion.div>
 						) : (
@@ -163,7 +179,7 @@ export const ChatInterface = ({ user, chatId, onNewMessage }: { user: any, chatI
 							<input
 								value={input}
 								onChange={(e) => setInput(e.target.value)}
-								placeholder="Ask about products, prices, or SQL..."
+								placeholder="Ask for sales trends, product categories, or analysis..."
 								className="flex-1 bg-transparent py-4 px-4 outline-none dark:text-white placeholder:text-gray-400 text-sm"
 							/>
 							<button

@@ -5,7 +5,12 @@ export interface User {
 	password?: string;
 	createdAt?: string;
 }
-
+interface ChartConfig {
+	type: 'bar' | 'line' | 'pie' | 'area';
+	xAxisKey: string;
+	series: { dataKey: string; name: string; color?: string }[];
+	title?: string;
+}
 export interface Message {
 	id: string | number;
 	role: 'user' | 'bot';
@@ -14,6 +19,7 @@ export interface Message {
 	summary?: string;
 	products?: Product[];
 	sql?: string;
+	chartConfig?: ChartConfig
 }
 
 export interface Product {

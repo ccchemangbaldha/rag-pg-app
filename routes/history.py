@@ -15,6 +15,7 @@ class HistoryCreate(BaseModel):
     summary: Optional[str] = None
     metadata: Optional[List[Dict[str, Any]]] = None
     sql: Optional[str] = None
+    chartConfig: Optional[Dict[str, Any]] = None
 
 @router.post("/")
 def create_history(history: HistoryCreate):
@@ -23,12 +24,13 @@ def create_history(history: HistoryCreate):
         cur = conn.cursor()
         
         meta_json = json.dumps(history.metadata) if history.metadata else None
+        chart_json = json.dumps(history.chartConfig) if history.chartConfig else None
 
         cur.execute("""
-            INSERT INTO "history"("userId", "chatId", "userInput", "botOutput", "summary", "metadata", "sql")
-            VALUES (%s, %s, %s, %s, %s, %s, %s) 
+            INSERT INTO "history"("userId", "chatId", "userInput", "botOutput", "summary", "metadata", "sql", "chartConfig")
+            VALUES (%s, %s, %s, %s, %s, %s, %s, %s) 
             RETURNING "historyId";
-        """, (history.userId, history.chatId, history.userInput, history.botOutput, history.summary, meta_json, history.sql))
+        """, (history.userId, history.chatId, history.userInput, history.botOutput, history.summary, meta_json, history.sql, chart_json))
         
         hid = cur.fetchone()[0]
         conn.commit()
@@ -72,7 +74,7 @@ def get_chat_messages(chatId: str):
         conn = get_connection()
         cur = conn.cursor()
         cur.execute("""
-            SELECT "historyId", "userId", "userInput", "botOutput", "summary", "createdAt", "metadata", "sql"
+            SELECT "historyId", "userId", "userInput", "botOutput", "summary", "createdAt", "metadata", "sql", "chartConfig"
             FROM "history" 
             WHERE "chatId" = %s 
             ORDER BY "createdAt" ASC;
@@ -90,7 +92,8 @@ def get_chat_messages(chatId: str):
                 "summary": r[4],
                 "createdAt": str(r[5]),
                 "metadata": r[6],
-                "sql": r[7]
+                "sql": r[7],
+                "chartConfig": r[8]
             })
             
         cur.close()

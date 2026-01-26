@@ -3,6 +3,7 @@ import { User as UserIcon, Zap, Database, Check, Copy, Sparkles } from "lucide-r
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import { ProductGrid } from "./productGrid";
+import { ChartRenderer } from "./ChartRenderer";
 import type { Message } from "../types";
 
 interface ChatMessageProps {
@@ -43,6 +44,10 @@ export const ChatMessage = ({ msg, copiedId, onCopy }: ChatMessageProps) => {
 						</ReactMarkdown>
 					</div>
 
+					{msg.chartConfig && msg.products && (
+						<ChartRenderer data={msg.products} config={msg.chartConfig} />
+					)}
+
 					{msg.sql && (
 						<div className="mt-3 mb-2">
 							<div className="flex items-center gap-1.5 text-[10px] font-semibold text-gray-400 uppercase tracking-wider mb-1.5 pl-1">
@@ -54,7 +59,7 @@ export const ChatMessage = ({ msg, copiedId, onCopy }: ChatMessageProps) => {
 						</div>
 					)}
 
-					{msg.products && msg.products.length > 0 && (
+					{!msg.chartConfig && msg.products && msg.products.length > 0 && (
 						<ProductGrid products={msg.products} />
 					)}
 
