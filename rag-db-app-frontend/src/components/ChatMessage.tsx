@@ -1,5 +1,5 @@
 import { motion } from "framer-motion";
-import { User as UserIcon, Zap, Database, Check, Copy, Sparkles } from "lucide-react";
+import { User as UserIcon, Zap, Database, Check, Copy, Sparkles, Download } from "lucide-react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import { ProductGrid } from "./productGrid";
@@ -11,6 +11,32 @@ interface ChatMessageProps {
 	copiedId: string | number | null;
 	onCopy: (text: string, id: string | number) => void;
 }
+
+const downloadCSV = (data: any[], filename: string) => {
+	if (!data || data.length === 0) return;
+
+	// Get headers from the first object
+	const headers = Object.keys(data[0]);
+
+	// Convert data to CSV format
+	const csvContent = [
+		headers.join(','), // Header row
+		...data.map(row => headers.map(fieldName =>
+			JSON.stringify(row[fieldName], (_, value) => value ?? '') // Handle nulls/formatting
+		).join(','))
+	].join('\n');
+
+	// Create a blob and trigger download
+	const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+	const url = URL.createObjectURL(blob);
+	const link = document.createElement('a');
+	link.setAttribute('href', url);
+	link.setAttribute('download', filename);
+	link.style.visibility = 'hidden';
+	document.body.appendChild(link);
+	link.click();
+	document.body.removeChild(link);
+};
 
 export const ChatMessage = ({ msg, copiedId, onCopy }: ChatMessageProps) => {
 	return (
@@ -63,12 +89,27 @@ export const ChatMessage = ({ msg, copiedId, onCopy }: ChatMessageProps) => {
 						<ProductGrid products={msg.products} />
 					)}
 
-					<button
-						onClick={() => onCopy(msg.text, msg.id)}
-						className={`absolute top-2 ${msg.role === 'user' ? '-left-10' : '-right-10'} p-2 opacity-0 group-hover:opacity-100 transition-opacity text-gray-400 hover:text-indigo-500`}
-					>
-						{copiedId === msg.id ? <Check size={16} className="text-green-500" /> : <Copy size={16} />}
-					</button>
+					{/* 3. Updated Action Buttons Section */}
+					<div className={`absolute top-2 ${msg.role === 'user' ? '-left-20' : '-right-20'} flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity`}>
+						{/* Only show CSV download if there are products */}
+						{msg.products && msg.products.length > 0 && (
+							<button
+								onClick={() => downloadCSV(msg.products!, `data-${msg.id}.csv`)}
+								className="p-2 text-gray-400 hover:text-indigo-500 bg-white dark:bg-gray-800 rounded-full shadow-sm border dark:border-gray-700"
+								title="Download CSV"
+							>
+								<Download size={16} />
+							</button>
+						)}
+
+						<button
+							onClick={() => onCopy(msg.text, msg.id)}
+							className="p-2 text-gray-400 hover:text-indigo-500 bg-white dark:bg-gray-800 rounded-full shadow-sm border dark:border-gray-700"
+							title="Copy Response"
+						>
+							{copiedId === msg.id ? <Check size={16} className="text-green-500" /> : <Copy size={16} />}
+						</button>
+					</div>
 				</div>
 				{msg.role === 'bot' && msg.summary && <span className="text-[10px] text-gray-400 font-medium px-2 flex items-center gap-1"><Sparkles size={10} /> {msg.summary}</span>}
 			</div>
