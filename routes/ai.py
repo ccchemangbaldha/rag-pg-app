@@ -40,6 +40,7 @@ class AIRequest(BaseModel):
     summary: Optional[str] = ""
     chatId: Optional[str] = None
     imageUrl: Optional[str] = None
+    history: Optional[List[Dict[str, Any]]] = [] 
 
 def generate_ai_response(messages):
     completion = client.chat.completions.create(
@@ -54,26 +55,31 @@ def generate_ai_response(messages):
 def ai_chat(req: AIRequest):
     try:
         system_prompt = f"""
-        You are a smart ecommerce analytics assistant and data visualizer.
-        
+        You are a dual-purpose AI assistant: 
+        1. A Data Analyst capable of querying the database.
+        2. A Helpful Conversationalist capable of remembering context.
+
         Database Schema:
         {SCHEMA_CONTEXT}
 
-        Responsibilities:
-        1. Generate executable PostgreSQL 'SELECT' queries based on the user prompt.
-        2. If the data is suitable for visualization (trends, comparisons, distributions), generate a 'chartConfig'.
-        3. 'chartConfig' must be a JSON object compatible with Recharts (React).
-        
+        DECISION LOGIC:
+        1. Analyze the User's Prompt and Chat History.
+        2. IF the user asks for data, statistics, sales figures, or inventory:
+           - Generate a valid PostgreSQL 'SELECT' query.
+           - Create a 'chartConfig' if visualization is useful.
+        3. IF the user asks a general question, greets you, or asks about previous context (e.g., "What is my name?", "Hello"):
+           - Set "sql" to null.
+           - Set "chartConfig" to null.
+           - Answer the user naturally in the "message" field based on the history provided.
+
         Response Format (JSON):
         {{
-            "sql": "SELECT ...",
-            "message": "Brief explanation",
+            "sql": "SELECT ... " OR null,
+            "message": "The explanation or natural language answer",
             "chartConfig": {{
                 "type": "bar" | "line" | "pie" | "area",
-                "xAxisKey": "column_name_for_x_axis",
-                "series": [
-                    {{ "dataKey": "column_name_for_y_axis", "name": "Label", "color": "#8884d8" }}
-                ],
+                "xAxisKey": "column_name",
+                "series": [ {{ "dataKey": "column_name", "name": "Label", "color": "#8884d8" }} ],
                 "title": "Chart Title"
             }} OR null
         }}
@@ -81,19 +87,26 @@ def ai_chat(req: AIRequest):
         Rules:
         - Use JOIN products ON products.product_id = CAST(sales.product_id AS INT) when needed.
         - For time-series, cast dates appropriately.
-        - If query is not about data (e.g., "hello"), sql and chartConfig should be null.
+        - NEVER generate SQL for personal questions like "Who am I?".
         """
 
-        messages = [
-            {"role": "system", "content": system_prompt},
-            {"role": "user", "content": f"Summary: {req.summary}\nPrompt: {req.prompt}"}
-        ]
+        messages = [{"role": "system", "content": system_prompt}]
+        
+        if req.history:
+            messages.extend(req.history[-10:]) 
 
+        user_content = f"Summary: {req.summary}\nPrompt: {req.prompt}"
+        
         if req.imageUrl:
-            messages[1]["content"] = [
-                {"type": "text", "text": f"Summary: {req.summary}\nPrompt: {req.prompt}"},
-                {"type": "image_url", "image_url": {"url": req.imageUrl}}
-            ]
+            messages.append({
+                "role": "user",
+                "content": [
+                    {"type": "text", "text": user_content},
+                    {"type": "image_url", "image_url": {"url": req.imageUrl}}
+                ]
+            })
+        else:
+            messages.append({"role": "user", "content": user_content})
 
         attempts = 0
         max_retries = 2

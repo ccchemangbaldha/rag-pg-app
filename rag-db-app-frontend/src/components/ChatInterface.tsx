@@ -1,11 +1,10 @@
 import { useState, useEffect, useRef } from "react";
 import { motion, AnimatePresence } from "framer-motion";
-import { Send, Bot, Loader2, Mic, MicOff } from "lucide-react"; // Import Mic icons
+import { Send, Bot, Loader2, Mic, MicOff } from "lucide-react";
 import { api } from "../lib/api";
 import { ChatMessage } from "./ChatMessage";
 import type { Message } from "../types";
 
-// --- 1. Add TypeScript definitions for Web Speech API ---
 declare global {
 	interface Window {
 		SpeechRecognition: any;
@@ -13,7 +12,6 @@ declare global {
 	}
 }
 
-// Helper to safely parse chartConfig
 const parseChartConfig = (config: any) => {
 	if (!config) return null;
 	if (typeof config === 'object') return config;
@@ -32,13 +30,11 @@ export const ChatInterface = ({ user, chatId, onNewMessage }: { user: any, chatI
 	const [isLoading, setIsLoading] = useState(false);
 	const [copiedId, setCopiedId] = useState<string | number | null>(null);
 
-	// --- 2. New State for Speech ---
 	const [isListening, setIsListening] = useState(false);
 	const recognitionRef = useRef<any>(null);
 
 	const scrollRef = useRef<HTMLDivElement>(null);
 
-	// --- Loading & Fetching Logic (Unchanged) ---
 	useEffect(() => {
 		if (!chatId) {
 			setMessages([]);
@@ -76,12 +72,10 @@ export const ChatInterface = ({ user, chatId, onNewMessage }: { user: any, chatI
 		fetchHistory();
 	}, [chatId]);
 
-	// --- Auto Scroll ---
 	useEffect(() => {
 		scrollRef.current?.scrollIntoView({ behavior: "smooth" });
 	}, [messages, isTyping, isLoading]);
 
-	// --- 3. Speech to Text Logic ---
 	const toggleListening = () => {
 		if (isListening) {
 			recognitionRef.current?.stop();
@@ -96,8 +90,8 @@ export const ChatInterface = ({ user, chatId, onNewMessage }: { user: any, chatI
 		}
 
 		const recognition = new SpeechRecognition();
-		recognition.lang = 'en-US'; // You can make this dynamic if needed
-		recognition.interimResults = false; // Set to true if you want to see text while speaking
+		recognition.lang = 'en-US';
+		recognition.interimResults = false;
 		recognition.maxAlternatives = 1;
 
 		recognition.onstart = () => {
@@ -106,7 +100,6 @@ export const ChatInterface = ({ user, chatId, onNewMessage }: { user: any, chatI
 
 		recognition.onresult = (event: any) => {
 			const transcript = event.results[0][0].transcript;
-			// Append the spoken text to the existing input
 			setInput((prev) => (prev ? `${prev} ${transcript}` : transcript));
 		};
 
@@ -127,7 +120,6 @@ export const ChatInterface = ({ user, chatId, onNewMessage }: { user: any, chatI
 		e.preventDefault();
 		if (!input.trim()) return;
 
-		// Stop listening if user sends while speaking
 		if (isListening) {
 			recognitionRef.current?.stop();
 			setIsListening(false);
@@ -137,8 +129,20 @@ export const ChatInterface = ({ user, chatId, onNewMessage }: { user: any, chatI
 		const currentChatId = chatId || `chat-${Date.now()}`;
 		const isNewChat = !chatId;
 
+		const historyPayload = messages.slice(-10).map(msg => {
+			const obj: any = {
+				role: msg.role === 'bot' ? 'assistant' : 'user',
+				content: msg.text
+			};
+			if (msg.sql != null) {
+				obj.sql = msg.sql;
+			}
+			return obj;
+		});
+
 		setInput("");
 		const tempId = Date.now().toString();
+
 		setMessages(prev => [...prev, { id: tempId, role: 'user', text: userText }]);
 		setIsTyping(true);
 
@@ -147,7 +151,8 @@ export const ChatInterface = ({ user, chatId, onNewMessage }: { user: any, chatI
 				userId: user.userId,
 				chatId: currentChatId,
 				prompt: userText,
-				summary: messages.length > 0 ? messages[messages.length - 1].summary : ""
+				summary: messages.length > 0 ? messages[messages.length - 1].summary : "",
+				history: historyPayload
 			});
 
 			setMessages(prev => [...prev, {
@@ -236,13 +241,12 @@ export const ChatInterface = ({ user, chatId, onNewMessage }: { user: any, chatI
 					<form onSubmit={handleSend} className="relative flex items-center group">
 						<div className={`flex-1 relative flex items-center bg-white dark:bg-gray-800 border-2 ${isListening ? 'border-red-400 ring-4 ring-red-100 dark:ring-red-900/30' : 'border-gray-100 dark:border-gray-700'} rounded-3xl transition-all group-focus-within:border-indigo-500/50 group-focus-within:shadow-2xl group-focus-within:shadow-indigo-500/10 px-2`}>
 
-							{/* --- 4. Mic Button UI --- */}
 							<button
 								type="button"
 								onClick={toggleListening}
 								className={`p-2 rounded-full transition-all duration-200 ml-2 ${isListening
-										? "bg-red-50 text-red-500 animate-pulse"
-										: "text-gray-400 hover:text-indigo-500 hover:bg-gray-50 dark:hover:bg-gray-700"
+									? "bg-red-50 text-red-500 animate-pulse"
+									: "text-gray-400 hover:text-indigo-500 hover:bg-gray-50 dark:hover:bg-gray-700"
 									}`}
 								title="Speech to Text"
 							>

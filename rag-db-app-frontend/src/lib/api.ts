@@ -1,5 +1,4 @@
 const API_BASE = import.meta.env.VITE_APP_API_URL
-// Generic wrapper for fetch requests
 async function request<T>(endpoint: string, options?: RequestInit): Promise<T> {
 	const response = await fetch(`${API_BASE}${endpoint}`, {
 		headers: { "Content-Type": "application/json" },
@@ -40,7 +39,7 @@ export const api = {
 
 	createHistory: (data: {
 		userId: number;
-		chatId: string; // Added chatId
+		chatId: string;
 		userInput: string;
 		botOutput: string;
 		summary?: string
@@ -52,8 +51,7 @@ export const api = {
 		body: JSON.stringify(data)
 	}),
 
-	// AI Chat usually needs the chatId to maintain context in the backend
-	chatWithAI: (data: { userId: number; chatId: string; prompt: string; summary?: string; imageUrl?: string}) =>
+	chatWithAI: (data: { userId: number; chatId: string; prompt: string; summary?: string; imageUrl?: string, history?: any }) =>
 		request("/ai/chat", {
 			method: "POST",
 			body: JSON.stringify(data)
