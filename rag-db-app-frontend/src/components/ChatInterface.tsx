@@ -1,16 +1,24 @@
 import { useState, useEffect, useRef } from "react";
 import { motion, AnimatePresence } from "framer-motion";
-import { Send, Bot, Loader2 } from "lucide-react";
+import { Send, Bot, Loader2, Mic, MicOff } from "lucide-react"; // Import Mic icons
 import { api } from "../lib/api";
 import { ChatMessage } from "./ChatMessage";
 import type { Message } from "../types";
 
-// Helper to safely parse chartConfig whether it's a string or already an object
+// --- 1. Add TypeScript definitions for Web Speech API ---
+declare global {
+	interface Window {
+		SpeechRecognition: any;
+		webkitSpeechRecognition: any;
+	}
+}
+
+// Helper to safely parse chartConfig
 const parseChartConfig = (config: any) => {
 	if (!config) return null;
-	if (typeof config === 'object') return config; // Already an object
+	if (typeof config === 'object') return config;
 	try {
-		return JSON.parse(config); // Parse string to object
+		return JSON.parse(config);
 	} catch (e) {
 		console.error("Failed to parse chart config:", e);
 		return null;
@@ -24,9 +32,13 @@ export const ChatInterface = ({ user, chatId, onNewMessage }: { user: any, chatI
 	const [isLoading, setIsLoading] = useState(false);
 	const [copiedId, setCopiedId] = useState<string | number | null>(null);
 
+	// --- 2. New State for Speech ---
+	const [isListening, setIsListening] = useState(false);
+	const recognitionRef = useRef<any>(null);
+
 	const scrollRef = useRef<HTMLDivElement>(null);
 
-	// --- Loading & Fetching Logic ---
+	// --- Loading & Fetching Logic (Unchanged) ---
 	useEffect(() => {
 		if (!chatId) {
 			setMessages([]);
@@ -49,7 +61,6 @@ export const ChatInterface = ({ user, chatId, onNewMessage }: { user: any, chatI
 						summary: h.summary,
 						products: h.metadata,
 						sql: h.sql,
-						// FIX: Parse the config here
 						chartConfig: parseChartConfig(h.chartConfig)
 					}
 				]);
@@ -70,9 +81,57 @@ export const ChatInterface = ({ user, chatId, onNewMessage }: { user: any, chatI
 		scrollRef.current?.scrollIntoView({ behavior: "smooth" });
 	}, [messages, isTyping, isLoading]);
 
+	// --- 3. Speech to Text Logic ---
+	const toggleListening = () => {
+		if (isListening) {
+			recognitionRef.current?.stop();
+			setIsListening(false);
+			return;
+		}
+
+		const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+		if (!SpeechRecognition) {
+			alert("Your browser does not support speech recognition. Please try Chrome or Edge.");
+			return;
+		}
+
+		const recognition = new SpeechRecognition();
+		recognition.lang = 'en-US'; // You can make this dynamic if needed
+		recognition.interimResults = false; // Set to true if you want to see text while speaking
+		recognition.maxAlternatives = 1;
+
+		recognition.onstart = () => {
+			setIsListening(true);
+		};
+
+		recognition.onresult = (event: any) => {
+			const transcript = event.results[0][0].transcript;
+			// Append the spoken text to the existing input
+			setInput((prev) => (prev ? `${prev} ${transcript}` : transcript));
+		};
+
+		recognition.onend = () => {
+			setIsListening(false);
+		};
+
+		recognition.onerror = (event: any) => {
+			console.error("Speech recognition error", event.error);
+			setIsListening(false);
+		};
+
+		recognitionRef.current = recognition;
+		recognition.start();
+	};
+
 	const handleSend = async (e: React.FormEvent) => {
 		e.preventDefault();
 		if (!input.trim()) return;
+
+		// Stop listening if user sends while speaking
+		if (isListening) {
+			recognitionRef.current?.stop();
+			setIsListening(false);
+		}
 
 		const userText = input;
 		const currentChatId = chatId || `chat-${Date.now()}`;
@@ -98,7 +157,7 @@ export const ChatInterface = ({ user, chatId, onNewMessage }: { user: any, chatI
 				summary: response.action,
 				products: response.results,
 				sql: response.sql,
-				chartConfig: response.chartConfig // This is usually already an object from axios/fetch
+				chartConfig: response.chartConfig
 			}]);
 
 			await api.createHistory({
@@ -175,13 +234,28 @@ export const ChatInterface = ({ user, chatId, onNewMessage }: { user: any, chatI
 			<div className="px-6 py-6">
 				<div className="relative max-w-4xl mx-auto">
 					<form onSubmit={handleSend} className="relative flex items-center group">
-						<div className="flex-1 relative flex items-center bg-white dark:bg-gray-800 border-2 border-gray-100 dark:border-gray-700 rounded-3xl transition-all group-focus-within:border-indigo-500/50 group-focus-within:shadow-2xl group-focus-within:shadow-indigo-500/10 px-2">
+						<div className={`flex-1 relative flex items-center bg-white dark:bg-gray-800 border-2 ${isListening ? 'border-red-400 ring-4 ring-red-100 dark:ring-red-900/30' : 'border-gray-100 dark:border-gray-700'} rounded-3xl transition-all group-focus-within:border-indigo-500/50 group-focus-within:shadow-2xl group-focus-within:shadow-indigo-500/10 px-2`}>
+
+							{/* --- 4. Mic Button UI --- */}
+							<button
+								type="button"
+								onClick={toggleListening}
+								className={`p-2 rounded-full transition-all duration-200 ml-2 ${isListening
+										? "bg-red-50 text-red-500 animate-pulse"
+										: "text-gray-400 hover:text-indigo-500 hover:bg-gray-50 dark:hover:bg-gray-700"
+									}`}
+								title="Speech to Text"
+							>
+								{isListening ? <MicOff size={20} /> : <Mic size={20} />}
+							</button>
+
 							<input
 								value={input}
 								onChange={(e) => setInput(e.target.value)}
-								placeholder="Ask for sales trends, product categories, or analysis..."
+								placeholder={isListening ? "Listening..." : "Ask for sales trends, product categories, or analysis..."}
 								className="flex-1 bg-transparent py-4 px-4 outline-none dark:text-white placeholder:text-gray-400 text-sm"
 							/>
+
 							<button
 								type="submit"
 								disabled={!input.trim() || isTyping}
