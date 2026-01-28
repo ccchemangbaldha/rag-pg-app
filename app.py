@@ -11,7 +11,7 @@ app = FastAPI()
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["https://rag-pg-app.vercel.app"],
+    allow_origins=["https://rag-pg-app.vercel.app","http://localhost:5173"],
     allow_methods=["*"],
     allow_headers=["*"],
 )

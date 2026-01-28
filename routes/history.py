@@ -17,7 +17,7 @@ class HistoryCreate(BaseModel):
     sql: Optional[str] = None
     chartConfig: Optional[Dict[str, Any]] = None
 
-@router.post("/")
+@router.post("", status_code=201)
 def create_history(history: HistoryCreate):
     try:
         conn = get_connection()
