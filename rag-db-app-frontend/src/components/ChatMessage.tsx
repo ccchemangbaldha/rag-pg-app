@@ -85,13 +85,11 @@ export const ChatMessage = ({ msg, copiedId, onCopy }: ChatMessageProps) => {
 						</div>
 					)}
 
-					{!msg.chartConfig && msg.products && msg.products.length > 0 && (
+					{msg.products && msg.products.length > 0 && (
 						<ProductGrid products={msg.products} />
 					)}
 
-					{/* 3. Updated Action Buttons Section */}
 					<div className={`absolute top-2 ${msg.role === 'user' ? '-left-20' : '-right-20'} flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity`}>
-						{/* Only show CSV download if there are products */}
 						{msg.products && msg.products.length > 0 && (
 							<button
 								onClick={() => downloadCSV(msg.products!, `data-${msg.id}.csv`)}
@@ -101,7 +99,6 @@ export const ChatMessage = ({ msg, copiedId, onCopy }: ChatMessageProps) => {
 								<Download size={16} />
 							</button>
 						)}
-
 						<button
 							onClick={() => onCopy(msg.text, msg.id)}
 							className="p-2 text-gray-400 hover:text-indigo-500 bg-white dark:bg-gray-800 rounded-full shadow-sm border dark:border-gray-700"

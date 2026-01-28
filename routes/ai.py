@@ -11,24 +11,32 @@ import psycopg2
 router = APIRouter(prefix="/ai")
 client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
 
+# Enriched Schema Context based on your data
 SCHEMA_CONTEXT = """
 CREATE TABLE products (
     product_id        BIGSERIAL PRIMARY KEY,
-    product_name      TEXT NOT NULL,
-    brand             TEXT NOT NULL,
-    category          TEXT NOT NULL,
-    sub_category      TEXT,
+    product_name      TEXT NOT NULL, -- Example: "Asics Running Shoes - Grey (Size 6)"
+    brand             TEXT NOT NULL, -- Example: "Asics", "Nike", "Woodland"
+    category          TEXT NOT NULL, -- Example: "Footwear"
+    sub_category      TEXT,          -- Example: "Running Shoes", "Formal Shoes", "Sneakers"
     price             NUMERIC(10,2) NOT NULL,
     rating            NUMERIC(3,1) DEFAULT 0.0,
+    gender            TEXT,          -- Example: "Men", "Women", "Unisex"
+    color             TEXT,          -- Example: "Red", "Blue", "Black"
+    size              TEXT,          -- Example: "6", "8", "11"
     created_at        TIMESTAMPTZ DEFAULT NOW()
 );
 
 CREATE TABLE sales (
     salesId SERIAL PRIMARY KEY,
-    sale_date DATE,
-    product_id VARCHAR(50),
+    sale_date DATE,                  -- Format: YYYY-MM-DD
+    product_id VARCHAR(50),          -- Foreign Key (needs CAST to INT for joins)
     category VARCHAR(100),
-    sales INTEGER,
+    sales INTEGER,                   -- QUANTITY SOLD (e.g., 13, 32). Total Revenue = sales * price
+    inventory INTEGER,               -- Current stock level
+    ad_cost NUMERIC(12,2),           -- Marketing spend
+    clicks INTEGER,                  -- Ad clicks
+    impressions INTEGER,             -- Ad views
     mfr_cost NUMERIC(12,2),
     price NUMERIC(12,2)
 );
@@ -56,42 +64,66 @@ def ai_chat(req: AIRequest):
     try:
         system_prompt = f"""
         You are a dual-purpose AI assistant: 
-        1. A Data Analyst capable of querying the database.
+        1. A Data Analyst capable of querying the PostgreSQL database.
         2. A Helpful Conversationalist capable of remembering context.
 
         Database Schema:
         {SCHEMA_CONTEXT}
 
+        COLUMN USAGE GUIDELINES:
+        - To calculate REVENUE: Use SUM(sales.sales * sales.price).
+        - To count ITEMS SOLD: Use SUM(sales.sales).
+        - To check STOCK: Use SUM(sales.inventory).
+        - To analyze MARKETING: Use ad_cost, clicks, or impressions.
+        - 'sales.product_id' is VARCHAR, so use CAST(sales.product_id AS INT) to join with 'products.product_id'.
+
+        FEW-SHOT EXAMPLES (Follow these patterns):
+        
+        Example 1 (Data Query):
+        User: "Which brand has the highest revenue?"
+        Response: {{
+            "sql": "SELECT brand, SUM(sales * price) as revenue FROM sales GROUP BY brand ORDER BY revenue DESC LIMIT 5",
+            "message": "Here are the top 5 brands by total revenue.",
+            "chartConfig": {{ "type": "bar", "title": "Top Brands by Revenue", "xAxisKey": "brand", "series": [{{"dataKey": "revenue", "name": "Revenue"}}] }}
+        }}
+
+        Example 2 (Inventory Query):
+        User: "Show me inventory for Nike shoes."
+        Response: {{
+            "sql": "SELECT product_name, inventory FROM sales JOIN products ON products.product_id = CAST(sales.product_id AS INT) WHERE products.brand = 'Nike' ORDER BY inventory DESC LIMIT 10",
+            "message": "Here is the inventory status for Nike products.",
+            "chartConfig": {{ "type": "bar", "title": "Nike Inventory", "xAxisKey": "product_name", "series": [{{"dataKey": "inventory", "name": "Stock"}}] }}
+        }}
+
+        Example 3 (Conversational/Personal):
+        User: "What is my name?" or "Hello" or "Who are you?"
+        Response: {{
+            "sql": null,
+            "message": "I am your AI assistant. I don't know your name unless you tell me, but I can help you analyze your sales data.",
+            "chartConfig": null
+        }}
+
         DECISION LOGIC:
         1. Analyze the User's Prompt and Chat History.
-        2. IF the user asks for data, statistics, sales figures, or inventory:
+        2. IF the user asks for data, statistics, sales figures, inventory, or trends:
            - Generate a valid PostgreSQL 'SELECT' query.
-           - Create a 'chartConfig' if visualization is useful.
-        3. IF the user asks a general question, greets you, or asks about previous context (e.g., "What is my name?", "Hello"):
+           - Create a 'chartConfig' only if they ask or visualization is useful.
+        3. IF the user asks a general question, greets you, or asks about previous context:
            - Set "sql" to null.
            - Set "chartConfig" to null.
-           - Answer the user naturally in the "message" field based on the history provided.
+           - Answer the user naturally in the "message" field.
 
         Response Format (JSON):
         {{
             "sql": "SELECT ... " OR null,
             "message": "The explanation or natural language answer",
-            "chartConfig": {{
-                "type": "bar" | "line" | "pie" | "area",
-                "xAxisKey": "column_name",
-                "series": [ {{ "dataKey": "column_name", "name": "Label", "color": "#8884d8" }} ],
-                "title": "Chart Title"
-            }} OR null
+            "chartConfig": {{ ... }} OR null
         }}
-
-        Rules:
-        - Use JOIN products ON products.product_id = CAST(sales.product_id AS INT) when needed.
-        - For time-series, cast dates appropriately.
-        - NEVER generate SQL for personal questions like "Who am I?".
         """
 
         messages = [{"role": "system", "content": system_prompt}]
         
+        # Add history if available
         if req.history:
             messages.extend(req.history[-10:]) 
 
@@ -118,6 +150,7 @@ def ai_chat(req: AIRequest):
             chart_config = ai_response.get("chartConfig")
             results = []
 
+            # --- CASE 1: Conversation Mode (No SQL Generated) ---
             if not generated_sql:
                 return send(True, "Success", {
                     "botOutput": bot_message,
@@ -127,6 +160,7 @@ def ai_chat(req: AIRequest):
                     "action": "chat"
                 })
 
+            # --- CASE 2: Data Analyst Mode (SQL Generated) ---
             if not generated_sql.strip().lower().startswith("select"):
                 return send(False, "Security violation: only SELECT allowed.")
 
@@ -156,6 +190,7 @@ def ai_chat(req: AIRequest):
                 if attempts > max_retries:
                     return send(False, "Auto-healing failed after retries.", error_msg)
                 
+                # Add the failed attempt and error to history for the model to self-correct
                 messages.append({"role": "assistant", "content": json.dumps(ai_response)})
                 messages.append({
                     "role": "user", 
