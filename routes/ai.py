@@ -107,6 +107,49 @@ COLUMN USAGE GUIDELINES:
 - Stock        = SUM(sales.inventory)
 - Marketing    = ad_cost, clicks, impressions
 -----------------------------------
+TIME SERIES & DATE RULES (IMPORTANT):
+- sales.sale_date is DATE (or stored as string convertible to DATE)
+- Use DATE_TRUNC('month', sale_date) for monthly aggregation:
+    SELECT DATE_TRUNC('month', sale_date) AS month, SUM(sales) ...
+- Always ORDER BY month for line/area charts.
+
+CATEGORY SHARE RULE:
+- For pie charts, aggregate by category/sub_category:
+    SELECT sub_category, SUM(sales) AS total FROM sales GROUP BY sub_category
+
+MULTI-SERIES CHART RULE:
+- For comparing metrics (e.g., sales vs inventory):
+    SELECT DATE_TRUNC('month', sale_date) AS month,
+           SUM(sales) AS sales,
+           SUM(inventory) AS inventory
+    FROM sales GROUP BY month ORDER BY month
+
+RATING DISTRIBUTION RULE:
+- Ratings exist in products table, so join if user asks:
+    SELECT rating, COUNT(*) FROM products GROUP BY rating ORDER BY rating
+
+PRODUCT + SALES JOIN RULE:
+- Use this form when mixing rating with sales:
+    SELECT p.brand, AVG(p.rating), SUM(s.sales)
+    FROM products p
+    JOIN sales s ON p.product_id = CAST(s.product_id AS INT)
+    GROUP BY p.brand
+
+CHART INFERENCE RULES:
+- line/area → time-series (requires DATE_TRUNC or monthly groups)
+- bar → ranking/comparison (brand/category)
+- pie → share of category (SUM sales/percentage)
+- scatter/multi-series → correlation (sales vs inventory)
+
+Example (Time-series):
+User: "show sales trend by month"
+Response: {
+ "sql": "SELECT DATE_TRUNC('month', sale_date) AS month,
+                SUM(sales) AS total_sales
+         FROM sales GROUP BY month ORDER BY month",
+ "message": "Monthly sales trend.",
+ "chartConfig": { "type": "line", "xAxisKey": "month", "series":[{"dataKey":"total_sales","name":"Sales"}] }
+}
 
 FEW-SHOT EXAMPLES:
 
