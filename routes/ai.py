@@ -11,182 +11,100 @@ import psycopg2
 router = APIRouter(prefix="/ai")
 client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
 
-# ... [Keep SCHEMA_CONTEXT and AIRequest class exactly as they were] ...
-
+# --- OPTIMIZED PROMPT (approx. 800-900 tokens) ---
 SCHEMA_CONTEXT = """
-DATABASE SCHEMA (SIMPLIFIED):
+ROLE:
+You are an expert PostgreSQL Data Analyst for a Footwear Retailer.
+Your goal is to generate precise, executable, and read-only SQL queries based on the user's intent.
 
-TABLE products (
-    product_id        BIGSERIAL PRIMARY KEY,
-    product_name      TEXT NOT NULL,
-    brand             TEXT NOT NULL,
-    category          TEXT,
-    sub_category      TEXT,
-    price             NUMERIC(10,2),
-    rating            NUMERIC(3,1),
-    gender            TEXT,
-    color             TEXT,
-    size              TEXT,
-    material          TEXT,
+DATABASE SCHEMA:
+1. products (
+    product_id        INT PRIMARY KEY,
+    product_name      TEXT,
+    brand             TEXT,
+    category          TEXT, -- e.g., 'Footwear' only 1 category available.
+    sub_category      TEXT, -- e.g., 'Running Shoes', 'Formal Shoes', 'Sandals',  "Sneakers", "Sandals", "Casual Shoes", "Sports Shoes"
     description       TEXT,
-    country_of_origin TEXT,
+    color             TEXT,
+    size              TEXT, --- 6 to 11 only
+    material          TEXT, -- e.g., 'Leather', 'Mesh', 'Synthetic'
+    gender            TEXT, -- 'Men', 'Women', 'Unisex'
+    mfr_cost          NUMERIC(10,2),
+    shipping_charge   NUMERIC(10,2),
+    price             NUMERIC,
     care_instructions TEXT,
-    warranty_months   INTEGER,
+    warranty_months   INT,
+    rating            NUMERIC, -- 1.0 to 5.0,
     launch_year       INTEGER,
-    image_url         TEXT,
-    created_at        TIMESTAMPTZ,
-    updated_at        TIMESTAMPTZ
-);
+    created_at        TIMESTAMP WITH TIMEZONE,
+    updated_at        TIMESTAMP WITH TIMEZONE,
+)
+2. sales (
+    salesId           INT PRIMARY KEY,
+    sale_date         DATE, -- Transaction date yyyy-MM-dd
+    product_id        INT, -- FK to products.product_id
+    collection_type   VARCHAR(100), -- 'Regular','New Arrival','Seasonal','Clearance'
+    sales             INTEGER, -- Quantity sold
+    inventory         INTEGER, -- Current stock level
+    ad_cost           NUMERIC, -- Marketing spend
+    clicks            INTEGER,
+    impressions       INTEGER, -- Impressions
+    mfr_cost          NUMERIC, -- Manufacturing cost
+    price             NUMERIC,  -- Sale price at transaction time
+    avg_cpc           NUMERIC(12,2)
+)
 
-TABLE sales (
-    salesId SERIAL PRIMARY KEY,
-    sale_date DATE,
-    product_id VARCHAR(50),
-    category VARCHAR(100),
-    sales INTEGER,
-    inventory INTEGER,
-    ad_cost NUMERIC(12,2),
-    clicks INTEGER,
-    impressions INTEGER,
-    mfr_cost NUMERIC(12,2),
-    price NUMERIC(12,2)
-);
+RELATIONSHIPS:
+- JOIN products p ON p.product_id = sales.product_id
 
-JOIN RULE:
-  sales.product_id is VARCHAR → use CAST(sales.product_id AS INT) to join with products.product_id
+METRIC DEFINITIONS:
+- Revenue       = SUM(sales.sales * sales.price)
+- Profit        = SUM((sales.price - sales.mfrcost) * sales.sales)
+- Total Sales   = SUM(sales.sales) (Quantity)
+- Conversion Rt = SUM(sales.sales)::NUMERIC / NULLIF(SUM(sales.clicks), 0) * 100
 
------------------------------------
-SEMANTIC RETAIL INTERPRETATION LAYER
------------------------------------
+SEMANTIC RULES (INTERPRETATION):
+- "Best selling"     -> ORDER BY SUM(sales.sales) DESC
+- "Top rated"        -> ORDER BY rating DESC
+- "Cheapest"         -> ORDER BY price ASC
+- "Monsoon"/"Rain"   -> material ILIKE '%synthetic%' OR description ILIKE '%waterproof%'
+- "Winter"/"Cold"    -> material ILIKE '%leather%' OR description ILIKE '%warm%'
+- "Gym"/"Running"    -> sub_category ILIKE '%Running%' OR sub_category ILIKE '%Sports%'
+- "Formal/Office"    -> sub_category ILIKE '%Formal%'
+- "Trends"           -> Group by DATE_TRUNC('month', date)
 
-Users may describe footwear in natural language:
-
-SEASON / WEATHER:
-  - monsoon / rainy → synthetic, anti-slip, rubber, sandals, quick dry
-  - winter / cold   → leather, foam, cushioned, warm
-  - summer / heat   → breathable, mesh, EVA sole, sandals
-
-ACTIVITY / USE-CASE:
-  - running, gym, sports  → Running Shoes / Sports Shoes
-  - office/formal/work    → Formal Shoes
-  - casual                → Sneakers, Sports Shoes, Sandals
-  - trekking/hiking       → robust, grip, outsole
-
-DEMOGRAPHICS:
-  - kids      → product_name or description ILIKE '%kid%'
-  - men       → gender = 'Men'
-  - women     → gender = 'Women'
-  - unisex    → gender = 'Unisex'
-
-MATERIAL / COMFORT:
-  - breathable, mesh, eva, knit
-  - memory foam, cushioned, anti-slip, leather, vegan
-
-INTERPRETATION RULE:
-  If user intent = product discovery or semantic filter:
-    - generate SELECT from products
-    - use ILIKE fuzzy matching on product_name, sub_category, description, material
-    - apply mapped filters based on season/activity/etc.
-    - ORDER BY rating DESC or price ASC depending on query tone
-
-ANALYTICS RULE:
-  If user intent = revenue, best selling, inventory, ads:
-    - join products + sales
-    - generate SELECT with GROUP BY / SUM / ORDER
-
-CONVERSATION RULE:
-  If user intent = greeting, context, or personal:
-    - no SQL
-
-AMBIGUOUS RULE:
-  If unclear, ask for clarification instead of hallucinating columns.
-  Only generate SELECT queries. Never INSERT/UPDATE/DELETE.
------------------------------------
-
-COLUMN USAGE GUIDELINES:
-- Revenue      = SUM(sales.sales * sales.price)
-- Items sold   = SUM(sales.sales)
-- Stock        = SUM(sales.inventory)
-- Marketing    = ad_cost, clicks, impressions
------------------------------------
-TIME SERIES & DATE RULES (IMPORTANT):
-- sales.sale_date is DATE (or stored as string convertible to DATE)
-- Use DATE_TRUNC('month', sale_date) for monthly aggregation:
-    SELECT DATE_TRUNC('month', sale_date) AS month, SUM(sales) ...
-- Always ORDER BY month for line/area charts.
-
-CATEGORY SHARE RULE:
-- For pie charts, aggregate by category/sub_category:
-    SELECT sub_category, SUM(sales) AS total FROM sales GROUP BY sub_category
-
-MULTI-SERIES CHART RULE:
-- For comparing metrics (e.g., sales vs inventory):
-    SELECT DATE_TRUNC('month', sale_date) AS month,
-           SUM(sales) AS sales,
-           SUM(inventory) AS inventory
-    FROM sales GROUP BY month ORDER BY month
-
-RATING DISTRIBUTION RULE:
-- Ratings exist in products table, so join if user asks:
-    SELECT rating, COUNT(*) FROM products GROUP BY rating ORDER BY rating
-
-PRODUCT + SALES JOIN RULE:
-- Use this form when mixing rating with sales:
-    SELECT p.brand, AVG(p.rating), SUM(s.sales)
-    FROM products p
-    JOIN sales s ON p.product_id = CAST(s.product_id AS INT)
-    GROUP BY p.brand
-
-CHART INFERENCE RULES:
-- line/area → time-series (requires DATE_TRUNC or monthly groups)
-- bar → ranking/comparison (brand/category)
-- pie → share of category (SUM sales/percentage)
-- scatter/multi-series → correlation (sales vs inventory)
-
-Example (Time-series):
-User: "show sales trend by month"
-Response: {
- "sql": "SELECT DATE_TRUNC('month', sale_date) AS month,
-                SUM(sales) AS total_sales
-         FROM sales GROUP BY month ORDER BY month",
- "message": "Monthly sales trend.",
- "chartConfig": { "type": "line", "xAxisKey": "month", "series":[{"dataKey":"total_sales","name":"Sales"}] }
-}
+RULES & CONSTRAINTS:
+1. Output purely valid JSON. No markdown, no preambles.
+2. ONLY generate SELECT queries. No UPDATE/DELETE/INSERT.
+3. Use ILIKE for string matching (case-insensitive).
+4. If the user asks for charts, strictly use the "chartConfig" format provided below.
+5. For Time Series: Always ORDER BY the date column.
+6. Ambiguity: If the user asks about "sales", clarify if they mean "Revenue" (money) or "Quantity" (units). Default to Revenue if unsure.
 
 FEW-SHOT EXAMPLES:
 
-Example (Discovery):
-User: "shoes for monsoon"
-Response: {
-  "sql": "SELECT product_name, brand, material, price FROM products
-          WHERE material ILIKE '%synthetic%' OR description ILIKE '%anti-slip%' OR description ILIKE '%rubber%'",
-  "message": "These materials handle rain and wet surfaces well.",
+User: "Show me monthly revenue trends."
+Response:
+{
+  "sql": "SELECT DATE_TRUNC('month', date) AS month, SUM(sales * price) AS revenue FROM sales GROUP BY month ORDER BY month",
+  "message": "Here is the monthly revenue trend based on your sales data.",
+  "chartConfig": { "type": "line", "xAxisKey": "month", "series": [{"dataKey": "revenue", "name": "Revenue"}] }
+}
+
+User: "Best running shoes for men under 2000?"
+Response:
+{
+  "sql": "SELECT product_name, brand, price, rating FROM products WHERE sub_category ILIKE '%Running%' AND gender = 'Men' AND price < 2000 ORDER BY rating DESC LIMIT 5",
+  "message": "Here are the top-rated running shoes for men under 2000.",
   "chartConfig": null
 }
 
-Example (Activity):
-User: "best running shoes"
-Response: {
-  "sql": "SELECT product_name, brand, rating, price FROM products
-          WHERE sub_category ILIKE '%Running%' ORDER BY rating DESC LIMIT 10",
-  "message": "Top-rated running shoes.",
-  "chartConfig": null
-}
-
-Example (Analytics):
-User: "which brand makes the most money?"
-Response: {
-  "sql": "SELECT brand, SUM(sales * price) AS revenue FROM sales GROUP BY brand ORDER BY revenue DESC",
-  "message": "Here are brands ordered by total revenue.",
-  "chartConfig": { "type": "bar", "xAxisKey": "brand", "series":[{"dataKey":"revenue","name":"Revenue"}] }
-}
-
-Example (Conversational):
-User: "hi"
-Response: {
-  "sql": null,
-  "message": "Hello! I can help you analyze products or sales.",
-  "chartConfig": null
+User: "Which brand has the highest profit?"
+Response:
+{
+  "sql": "SELECT p.brand, SUM((s.price - s.mfrcost) * s.sales) AS total_profit FROM sales s JOIN products p ON s.productid = p.product_id GROUP BY p.brand ORDER BY total_profit DESC LIMIT 10",
+  "message": "Here are the most profitable brands.",
+  "chartConfig": { "type": "bar", "xAxisKey": "brand", "series": [{"dataKey": "total_profit", "name": "Profit"}] }
 }
 """
 
@@ -203,11 +121,11 @@ def generate_ai_response(messages):
         model="gpt-4o",
         messages=messages,
         response_format={"type": "json_object"},
-        temperature=0
+        temperature=0.3
     )
     content = json.loads(completion.choices[0].message.content)
     
-    # Extract token usage
+    # Extract token usage for UI display
     usage = {
         "prompt_tokens": completion.usage.prompt_tokens,
         "completion_tokens": completion.usage.completion_tokens,
@@ -220,35 +138,14 @@ def generate_ai_response(messages):
 def ai_chat(req: AIRequest):
     try:
         system_prompt = f"""
-        You are a hybrid Retail Product Assistant + Data Analyst for PostgreSQL.
-        You must choose one of three modes:
-          (1) SQL Data Analyst Mode
-          (2) Product Discovery Mode
-          (3) Conversational Mode
-
-        Behavior Rules:
-        - Never hallucinate columns.
-        - Only SELECT is allowed.
-        - If discovery intent found → query 'products'
-        - If analytics intent found → join 'sales'
-        - If greeting or meta intent → no SQL
-        - Use semantic retail mapping when helpful.
-        - Be helpful and concise.
-        - Always return JSON:
-        {{
-           "sql": SELECT ... OR null,
-           "message": string,
-           "chartConfig": object OR null
-        }}
-
-        Now use the schema and semantic mapping below:
         {SCHEMA_CONTEXT}
+        Using the schema above, process the following request:
         """
 
         messages = [{"role": "system", "content": system_prompt}]
 
         if req.history:
-            messages.extend(req.history[-10:])
+            messages.extend(req.history[-6:])
 
         user_content = f"Summary: {req.summary}\nPrompt: {req.prompt}"
 
@@ -267,7 +164,6 @@ def ai_chat(req: AIRequest):
         max_retries = 2
 
         while attempts <= max_retries:
-            # Unpack response and usage
             ai_response, usage_stats = generate_ai_response(messages)
             
             generated_sql = ai_response.get("sql")
@@ -281,7 +177,7 @@ def ai_chat(req: AIRequest):
                     "results": [],
                     "chartConfig": None,
                     "action": "chat",
-                    "usage": usage_stats  # Include usage in response
+                    "usage": usage_stats
                 })
 
             if not generated_sql.strip().lower().startswith("select"):
@@ -303,7 +199,7 @@ def ai_chat(req: AIRequest):
                     "results": results,
                     "chartConfig": chart_config,
                     "action": "search_result",
-                    "usage": usage_stats # Include usage in response
+                    "usage": usage_stats
                 })
 
             except Exception as db_err:
@@ -317,7 +213,7 @@ def ai_chat(req: AIRequest):
                 messages.append({"role": "assistant", "content": json.dumps(ai_response)})
                 messages.append({
                     "role": "user",
-                    "content": f"The SQL failed with error: {err}. Correct it and regenerate JSON."
+                    "content": f"The SQL failed with error: {err}. Please correct the SQL and regenerate JSON."
                 })
 
     except Exception as e:
