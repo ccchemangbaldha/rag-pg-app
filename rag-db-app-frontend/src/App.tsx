@@ -5,13 +5,13 @@ import {
   LayoutDashboard,
   MessageSquare,
   LogOut,
-  Plus,
-  MessageCircle,
-  Trash2 // Imported Trash icon
+  Database
 } from "lucide-react";
 import { LoginScreen } from "./components/LoginScreen";
 import { Dashboard } from "./components/Dashboard";
 import { ChatInterface } from "./components/ChatInterface";
+import { DatabaseConfig } from "./components/DatabaseConfig";
+import { Sidebar } from "./components/Sidebar";
 import { api } from "./lib/api";
 
 const STORAGE_KEY = "app_session";
@@ -19,7 +19,7 @@ const STORAGE_KEY = "app_session";
 export default function App() {
   const [userSession, setUserSession] = useState<any>(null);
   const [darkMode, setDarkMode] = useState(false);
-  const [view, setView] = useState<'dashboard' | 'chat'>('chat');
+  const [view, setView] = useState<'dashboard' | 'chat' | 'database'>('chat');
   const [chatList, setChatList] = useState<any[]>([]);
   const [activeChatId, setActiveChatId] = useState<string | null>(null);
 
@@ -94,22 +94,27 @@ export default function App() {
       <nav className="h-16 flex-shrink-0 bg-white/80 dark:bg-gray-900/80 backdrop-blur-md border-b dark:border-gray-800 px-4 flex items-center justify-between">
         <div className="flex items-center gap-3">
           <div className="flex bg-gray-100 dark:bg-gray-800 p-1 rounded-lg">
-            <button onClick={() => setView('chat')} className={`flex items-center gap-2 px-3 py-1.5 rounded-md text-sm font-medium ${view === 'chat' ? 'bg-white dark:bg-gray-700 shadow-sm text-blue-600' : 'text-gray-500'}`}>
+            <button onClick={() => setView('chat')} className={`flex items-center gap-2 px-3 py-1.5 rounded-md text-sm font-medium transition-colors ${view === 'chat' ? 'bg-white dark:bg-gray-700 shadow-sm text-blue-600' : 'text-gray-500 hover:text-gray-700 dark:hover:text-gray-300'}`}>
               <MessageSquare size={16} /> Chat
             </button>
-            {userSession.username === 'hemang9705' &&
-              <button onClick={() => setView('dashboard')} className={`flex items-center gap-2 px-3 py-1.5 rounded-md text-sm font-medium ${view === 'dashboard' ? 'bg-white dark:bg-gray-700 shadow-sm text-blue-600' : 'text-gray-500'}`}>
-                <LayoutDashboard size={16} /> Admin
-              </button>
-            }
+            {userSession.username === 'hemang9705' && (
+              <>
+                <button onClick={() => setView('dashboard')} className={`flex items-center gap-2 px-3 py-1.5 rounded-md text-sm font-medium transition-colors ${view === 'dashboard' ? 'bg-white dark:bg-gray-700 shadow-sm text-blue-600' : 'text-gray-500 hover:text-gray-700 dark:hover:text-gray-300'}`}>
+                  <LayoutDashboard size={16} /> Admin
+                </button>
+                <button onClick={() => setView('database')} className={`flex items-center gap-2 px-3 py-1.5 rounded-md text-sm font-medium transition-colors ${view === 'database' ? 'bg-white dark:bg-gray-700 shadow-sm text-blue-600' : 'text-gray-500 hover:text-gray-700 dark:hover:text-gray-300'}`}>
+                  <Database size={16} /> Database
+                </button>
+              </>
+            )}
           </div>
         </div>
 
         <div className="flex items-center gap-4">
-          <button onClick={() => setDarkMode(!darkMode)} className="p-2 rounded-full hover:bg-gray-100 dark:hover:bg-gray-800">
+          <button onClick={() => setDarkMode(!darkMode)} className="p-2 rounded-full hover:bg-gray-100 dark:hover:bg-gray-800 transition-colors">
             {darkMode ? <Sun className="text-amber-400" size={20} /> : <Moon className="text-gray-600" size={20} />}
           </button>
-          <button onClick={handleLogout} className="p-2 text-red-500 hover:bg-red-50 dark:hover:bg-red-900/20 rounded-lg">
+          <button onClick={handleLogout} className="p-2 text-red-500 hover:bg-red-50 dark:hover:bg-red-900/20 rounded-lg transition-colors">
             <LogOut size={20} />
           </button>
         </div>
@@ -118,41 +123,13 @@ export default function App() {
       {/* Main Content Area */}
       <div className="flex flex-1 overflow-hidden">
         {view === 'chat' && (
-          <aside className="w-64 border-r dark:border-gray-800 bg-white dark:bg-gray-900 flex flex-col md:flex">
-            <div className="p-4">
-              <button
-                onClick={startNewChat}
-                className="w-full flex items-center justify-center gap-2 py-3 bg-blue-600 hover:bg-blue-700 text-white rounded-xl transition-all font-medium"
-              >
-                <Plus size={18} /> New Chat
-              </button>
-            </div>
-            <div className="flex-1 overflow-y-auto px-2 space-y-1">
-              <p className="px-3 text-xs font-semibold text-gray-400 uppercase tracking-wider mb-2">Recent</p>
-
-              {chatList.map((chat) => (
-                <div key={chat.chatId} className="group relative flex items-center">
-                  <button
-                    onClick={() => setActiveChatId(chat.chatId)}
-                    className={`w-full text-left px-3 py-2 rounded-lg text-sm truncate flex items-center gap-2 transition-colors ${activeChatId === chat.chatId ? 'bg-blue-50 dark:bg-blue-900/20 text-blue-600' : 'hover:bg-gray-100 dark:hover:bg-gray-800 text-gray-600 dark:text-gray-400'}`}
-                  >
-                    <MessageCircle size={14} className="flex-shrink-0" />
-                    <span className="truncate pr-8">
-                      {chat.title?.split(" ").slice(0, 5).join(" ") || "New Conversation"}
-                    </span>
-                  </button>
-
-                  {/* Delete Button - only visible on hover */}
-                  <button
-                    onClick={(e) => handleDeleteChat(e, chat.chatId)}
-                    className="absolute right-2 p-1.5 text-gray-400 hover:text-red-500 opacity-0 group-hover:opacity-100 transition-opacity rounded-md hover:bg-gray-200 dark:hover:bg-gray-700"
-                  >
-                    <Trash2 size={14} />
-                  </button>
-                </div>
-              ))}
-            </div>
-          </aside>
+          <Sidebar
+            chatList={chatList}
+            activeChatId={activeChatId}
+            onNewChat={startNewChat}
+            onSelectChat={setActiveChatId}
+            onDeleteChat={handleDeleteChat}
+          />
         )}
 
         <main className="flex-1 relative overflow-y-auto">
@@ -162,8 +139,10 @@ export default function App() {
               chatId={activeChatId}
               onNewMessage={refreshChatList}
             />
-          ) : (
+          ) : view === 'dashboard' ? (
             <div className="container mx-auto p-6"><Dashboard /></div>
+          ) : (
+            <div className="container mx-auto p-6"><DatabaseConfig /></div>
           )}
         </main>
       </div>
