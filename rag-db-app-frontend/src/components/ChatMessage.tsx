@@ -1,5 +1,5 @@
 import { motion } from "framer-motion";
-import { User as UserIcon, Zap, Database, Check, Copy, Sparkles, Download } from "lucide-react";
+import { User as UserIcon, Zap, Database, Check, Copy, Sparkles, Download, Cpu } from "lucide-react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import { ProductGrid } from "./productGrid";
@@ -11,6 +11,27 @@ interface ChatMessageProps {
 	copiedId: string | number | null;
 	onCopy: (text: string, id: string | number) => void;
 }
+
+// Basic SQL formatter
+const formatSQL = (sql: string) => {
+	if (!sql) return "";
+	const keywords = [
+		"SELECT", "FROM", "WHERE", "GROUP BY", "ORDER BY",
+		"JOIN", "LEFT JOIN", "RIGHT JOIN", "INNER JOIN", "OUTER JOIN",
+		"LIMIT", "OFFSET", "HAVING", "VALUES", "UPDATE", "SET",
+		"DELETE", "INSERT INTO", "CREATE TABLE", "ALTER TABLE", "UNION"
+	];
+
+	let formatted = sql;
+	keywords.forEach(kw => {
+		const regex = new RegExp(`\\b${kw}\\b`, 'gi');
+		formatted = formatted.replace(regex, `\n${kw}`);
+	});
+
+	formatted = formatted.replace(/\b(AND|OR)\b/gi, '\n  $1');
+
+	return formatted.trim();
+};
 
 const downloadCSV = (data: any[], filename: string) => {
 	if (!data || data.length === 0) return;
@@ -79,8 +100,8 @@ export const ChatMessage = ({ msg, copiedId, onCopy }: ChatMessageProps) => {
 							<div className="flex items-center gap-1.5 text-[10px] font-semibold text-gray-400 uppercase tracking-wider mb-1.5 pl-1">
 								<Database size={12} /> Generated SQL
 							</div>
-							<div className="bg-gray-900 text-gray-200 p-3 rounded-lg text-xs font-mono overflow-x-auto border border-gray-700 shadow-inner">
-								{msg.sql}
+							<div className="bg-gray-900 text-gray-200 p-3 rounded-lg text-xs font-mono overflow-x-auto border border-gray-700 shadow-inner whitespace-pre-wrap">
+								{formatSQL(msg.sql)}
 							</div>
 						</div>
 					)}
@@ -108,7 +129,20 @@ export const ChatMessage = ({ msg, copiedId, onCopy }: ChatMessageProps) => {
 						</button>
 					</div>
 				</div>
-				{msg.role === 'bot' && msg.summary && <span className="text-[10px] text-gray-400 font-medium px-2 flex items-center gap-1"><Sparkles size={10} /> {msg.summary}</span>}
+
+				{/* Footer with Summary and Token Usage */}
+				<div className="flex flex-wrap items-center gap-3 px-2">
+					{msg.role === 'bot' && msg.summary && (
+						<span className="text-[10px] text-gray-400 font-medium flex items-center gap-1">
+							<Sparkles size={10} /> {msg.summary}
+						</span>
+					)}
+					{msg.role === 'bot' && msg.usage && (
+						<span className="text-[10px] text-gray-400 font-medium flex items-center gap-1" title="Token Usage (Input / Output)">
+							<Cpu size={10} /> {msg.usage.prompt_tokens} in / {msg.usage.completion_tokens} out
+						</span>
+					)}
+				</div>
 			</div>
 		</motion.div>
 	);

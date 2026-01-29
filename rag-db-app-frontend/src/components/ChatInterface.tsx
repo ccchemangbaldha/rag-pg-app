@@ -57,7 +57,9 @@ export const ChatInterface = ({ user, chatId, onNewMessage }: { user: any, chatI
 						summary: h.summary,
 						products: h.metadata,
 						sql: h.sql,
-						chartConfig: parseChartConfig(h.chartConfig)
+						chartConfig: parseChartConfig(h.chartConfig),
+						// Note: History usually doesn't store token usage in this simplified schema, 
+						// so we omit it for old messages unless the DB schema was also updated.
 					}
 				]);
 
@@ -162,7 +164,8 @@ export const ChatInterface = ({ user, chatId, onNewMessage }: { user: any, chatI
 				summary: response.action,
 				products: response.results,
 				sql: response.sql,
-				chartConfig: response.chartConfig
+				chartConfig: response.chartConfig,
+				usage: response.usage // Mapping usage here
 			}]);
 
 			await api.createHistory({

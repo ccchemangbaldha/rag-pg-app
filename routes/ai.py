@@ -11,6 +11,8 @@ import psycopg2
 router = APIRouter(prefix="/ai")
 client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
 
+# ... [Keep SCHEMA_CONTEXT and AIRequest class exactly as they were] ...
+
 SCHEMA_CONTEXT = """
 DATABASE SCHEMA (SIMPLIFIED):
 
@@ -203,7 +205,16 @@ def generate_ai_response(messages):
         response_format={"type": "json_object"},
         temperature=0
     )
-    return json.loads(completion.choices[0].message.content)
+    content = json.loads(completion.choices[0].message.content)
+    
+    # Extract token usage
+    usage = {
+        "prompt_tokens": completion.usage.prompt_tokens,
+        "completion_tokens": completion.usage.completion_tokens,
+        "total_tokens": completion.usage.total_tokens
+    }
+    
+    return content, usage
 
 @router.post("/chat")
 def ai_chat(req: AIRequest):
@@ -256,7 +267,9 @@ def ai_chat(req: AIRequest):
         max_retries = 2
 
         while attempts <= max_retries:
-            ai_response = generate_ai_response(messages)
+            # Unpack response and usage
+            ai_response, usage_stats = generate_ai_response(messages)
+            
             generated_sql = ai_response.get("sql")
             bot_message = ai_response.get("message")
             chart_config = ai_response.get("chartConfig")
@@ -267,7 +280,8 @@ def ai_chat(req: AIRequest):
                     "sql": None,
                     "results": [],
                     "chartConfig": None,
-                    "action": "chat"
+                    "action": "chat",
+                    "usage": usage_stats  # Include usage in response
                 })
 
             if not generated_sql.strip().lower().startswith("select"):
@@ -288,7 +302,8 @@ def ai_chat(req: AIRequest):
                     "sql": generated_sql,
                     "results": results,
                     "chartConfig": chart_config,
-                    "action": "search_result"
+                    "action": "search_result",
+                    "usage": usage_stats # Include usage in response
                 })
 
             except Exception as db_err:

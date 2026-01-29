@@ -11,6 +11,13 @@ interface ChartConfig {
 	series: { dataKey: string; name: string; color?: string }[];
 	title?: string;
 }
+
+export interface TokenUsage {
+	prompt_tokens: number;
+	completion_tokens: number;
+	total_tokens: number;
+}
+
 export interface Message {
 	id: string | number;
 	role: 'user' | 'bot';
@@ -19,7 +26,8 @@ export interface Message {
 	summary?: string;
 	products?: Product[];
 	sql?: string;
-	chartConfig?: ChartConfig
+	chartConfig?: ChartConfig;
+	usage?: TokenUsage; // Added this field
 }
 
 export interface Product {
