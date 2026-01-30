@@ -19,6 +19,12 @@ export interface TokenUsage {
 	total_tokens: number;
 }
 
+export interface TokenUsage {
+	prompt_tokens: number;
+	completion_tokens: number;
+	total_tokens: number;
+}
+
 export interface MessageSection {
 	text: string;
 	sql?: string;
@@ -71,4 +77,5 @@ export interface HistoryLog {
 	summary: string;
 	metadata: any;
 	createdAt: string;
+	usage?: TokenUsage;
 }

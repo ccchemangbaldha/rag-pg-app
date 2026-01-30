@@ -49,8 +49,6 @@ export const ChatInterface = ({ user, chatId, onNewMessage }: { user: any, chatI
 				const sorted = history.sort((a: any, b: any) => new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime());
 
 				const formatted: Message[] = sorted.flatMap((h: any) => {
-					// Logic to determine if this is a new multi-step message or legacy
-					// New structure stores { sections: [...] } in metadata
 					const metadata = h.metadata || {};
 					const hasSections = metadata && !Array.isArray(metadata) && metadata.sections;
 
@@ -59,17 +57,13 @@ export const ChatInterface = ({ user, chatId, onNewMessage }: { user: any, chatI
 						{
 							id: `b-${h.historyId}`,
 							role: 'bot',
-							text: h.botOutput, // Fallback text
+							text: h.botOutput,
 							summary: h.summary,
-
-							// Key Fix: Hydrate sections if present
 							sections: hasSections ? metadata.sections : undefined,
-
-							// Fallback for legacy messages (where metadata was just products array)
 							products: Array.isArray(metadata) ? metadata : (metadata.legacyResults || []),
-
 							sql: h.sql,
 							chartConfig: parseChartConfig(h.chartConfig),
+							usage: h.usage // Restore usage from DB
 						}
 					];
 				});
@@ -227,7 +221,8 @@ export const ChatInterface = ({ user, chatId, onNewMessage }: { user: any, chatI
 				summary: response.action,
 				metadata: metadataToSave,
 				sql: combinedSql,
-				chartConfig: response.chartConfig
+				chartConfig: response.chartConfig,
+				usage: response.usage
 			});
 
 			if (isNewChat) onNewMessage();

@@ -46,6 +46,7 @@ export const api = {
 		metadata?: string | any;
 		sql?: string;
 		chartConfig?: string;
+		usage?: any;
 	}) => request("/history", {
 		method: "POST",
 		body: JSON.stringify(data)

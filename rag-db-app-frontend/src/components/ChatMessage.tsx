@@ -146,7 +146,6 @@ const RenderSection = ({ section, idx, msgId, onCopy, copiedId }: RenderSectionP
 };
 
 export const ChatMessage = ({ msg, copiedId, onCopy }: ChatMessageProps) => {
-	// Consolidate content for "Copy" functionality (Main message copy)
 	const fullTextToCopy = msg.sections
 		? msg.sections.map(s => `${s.text}\n${s.sql || ''}`).join('\n\n')
 		: msg.text;
@@ -172,7 +171,6 @@ export const ChatMessage = ({ msg, copiedId, onCopy }: ChatMessageProps) => {
 					) : (
 						<div className="flex flex-col gap-6">
 							{msg.sections ? (
-								// Multi-step Rendering
 								msg.sections.map((section, idx) => (
 									<RenderSection
 										key={idx}
@@ -184,7 +182,6 @@ export const ChatMessage = ({ msg, copiedId, onCopy }: ChatMessageProps) => {
 									/>
 								))
 							) : (
-								// Legacy Single-step Rendering
 								<RenderSection
 									idx={0}
 									section={{
@@ -212,7 +209,6 @@ export const ChatMessage = ({ msg, copiedId, onCopy }: ChatMessageProps) => {
 					</div>
 				</div>
 
-				{/* Footer */}
 				<div className="flex flex-wrap items-center gap-3 px-2">
 					{msg.role === 'bot' && msg.summary && (
 						<span className="text-[10px] text-gray-400 font-medium flex items-center gap-1">
@@ -221,7 +217,8 @@ export const ChatMessage = ({ msg, copiedId, onCopy }: ChatMessageProps) => {
 					)}
 					{msg.role === 'bot' && msg.usage && (
 						<span className="text-[10px] text-gray-400 font-medium flex items-center gap-1" title="Token Usage">
-							<Cpu size={10} /> {msg.usage.prompt_tokens}/{msg.usage.completion_tokens}
+							<Cpu size={10} />
+							In: {msg.usage.prompt_tokens} / Out: {msg.usage.completion_tokens}
 						</span>
 					)}
 				</div>

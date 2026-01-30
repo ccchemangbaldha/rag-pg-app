@@ -13,11 +13,10 @@ class HistoryCreate(BaseModel):
     userInput: str
     botOutput: str
     summary: Optional[str] = None
-    # Changed from List[Dict] to Any to support the new complex object structure
     metadata: Optional[Any] = None 
     sql: Optional[str] = None
-    # Changed to Any to handle cases where frontend sends stringified JSON or raw objects
-    chartConfig: Optional[Any] = None 
+    chartConfig: Optional[Any] = None
+    usage: Optional[Dict[str, Any]] = None # Added usage field
 
 @router.post("", status_code=201)
 def create_history(history: HistoryCreate):
@@ -25,21 +24,15 @@ def create_history(history: HistoryCreate):
         conn = get_connection()
         cur = conn.cursor()
         
-        # Robust handling: Only dump to JSON if it's a dict/list. 
-        # If it's already a string, assume it's valid JSON (or text) and save as is.
-        meta_json = history.metadata
-        if history.metadata and not isinstance(history.metadata, str):
-            meta_json = json.dumps(history.metadata)
-
-        chart_json = history.chartConfig
-        if history.chartConfig and not isinstance(history.chartConfig, str):
-            chart_json = json.dumps(history.chartConfig)
+        meta_json = json.dumps(history.metadata) if history.metadata and not isinstance(history.metadata, str) else history.metadata
+        chart_json = json.dumps(history.chartConfig) if history.chartConfig and not isinstance(history.chartConfig, str) else history.chartConfig
+        usage_json = json.dumps(history.usage) if history.usage else None
 
         cur.execute("""
-            INSERT INTO "history"("userId", "chatId", "userInput", "botOutput", "summary", "metadata", "sql", "chartConfig")
-            VALUES (%s, %s, %s, %s, %s, %s, %s, %s) 
+            INSERT INTO "history"("userId", "chatId", "userInput", "botOutput", "summary", "metadata", "sql", "chartConfig", "usage")
+            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s) 
             RETURNING "historyId";
-        """, (history.userId, history.chatId, history.userInput, history.botOutput, history.summary, meta_json, history.sql, chart_json))
+        """, (history.userId, history.chatId, history.userInput, history.botOutput, history.summary, meta_json, history.sql, chart_json, usage_json))
         
         hid = cur.fetchone()[0]
         conn.commit()
@@ -83,8 +76,9 @@ def get_chat_messages(chatId: str):
     try:
         conn = get_connection()
         cur = conn.cursor()
+        # Added "usage" to SELECT
         cur.execute("""
-            SELECT "historyId", "userId", "userInput", "botOutput", "summary", "createdAt", "metadata", "sql", "chartConfig"
+            SELECT "historyId", "userId", "userInput", "botOutput", "summary", "createdAt", "metadata", "sql", "chartConfig", "usage"
             FROM "history" 
             WHERE "chatId" = %s 
             ORDER BY "createdAt" ASC;
@@ -96,17 +90,19 @@ def get_chat_messages(chatId: str):
         for r in rows:
             meta_data = r[6]
             if isinstance(meta_data, str):
-                try:
-                    meta_data = json.loads(meta_data)
-                except:
-                    pass
+                try: meta_data = json.loads(meta_data)
+                except: pass
 
             chart_conf = r[8]
             if isinstance(chart_conf, str):
-                try:
-                    chart_conf = json.loads(chart_conf)
-                except:
-                    pass
+                try: chart_conf = json.loads(chart_conf)
+                except: pass
+            
+            # Handle usage JSONB
+            usage_data = r[9]
+            if isinstance(usage_data, str):
+                try: usage_data = json.loads(usage_data)
+                except: pass
 
             messages.append({
                 "historyId": r[0],
@@ -117,7 +113,8 @@ def get_chat_messages(chatId: str):
                 "createdAt": str(r[5]),
                 "metadata": meta_data,
                 "sql": r[7],
-                "chartConfig": chart_conf
+                "chartConfig": chart_conf,
+                "usage": usage_data
             })
             
         cur.close()
@@ -125,7 +122,7 @@ def get_chat_messages(chatId: str):
         return send(True, "Messages retrieved", messages)
     except Exception as e:
         return send(False, "Failed to fetch messages", str(e))
-
+    
 @router.delete("/{historyId}")
 def delete_history(historyId: int):
     try:
