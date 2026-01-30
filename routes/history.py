@@ -13,9 +13,11 @@ class HistoryCreate(BaseModel):
     userInput: str
     botOutput: str
     summary: Optional[str] = None
-    metadata: Optional[List[Dict[str, Any]]] = None
+    # Changed from List[Dict] to Any to support the new complex object structure
+    metadata: Optional[Any] = None 
     sql: Optional[str] = None
-    chartConfig: Optional[Dict[str, Any]] = None
+    # Changed to Any to handle cases where frontend sends stringified JSON or raw objects
+    chartConfig: Optional[Any] = None 
 
 @router.post("", status_code=201)
 def create_history(history: HistoryCreate):
@@ -23,8 +25,15 @@ def create_history(history: HistoryCreate):
         conn = get_connection()
         cur = conn.cursor()
         
-        meta_json = json.dumps(history.metadata) if history.metadata else None
-        chart_json = json.dumps(history.chartConfig) if history.chartConfig else None
+        # Robust handling: Only dump to JSON if it's a dict/list. 
+        # If it's already a string, assume it's valid JSON (or text) and save as is.
+        meta_json = history.metadata
+        if history.metadata and not isinstance(history.metadata, str):
+            meta_json = json.dumps(history.metadata)
+
+        chart_json = history.chartConfig
+        if history.chartConfig and not isinstance(history.chartConfig, str):
+            chart_json = json.dumps(history.chartConfig)
 
         cur.execute("""
             INSERT INTO "history"("userId", "chatId", "userInput", "botOutput", "summary", "metadata", "sql", "chartConfig")
@@ -39,6 +48,7 @@ def create_history(history: HistoryCreate):
         
         return send(True, "History created", {"historyId": hid})
     except Exception as e:
+        print("History Create Error:", str(e))
         return send(False, "Failed to create history", str(e))
 
 @router.get("/list/{userId}")
@@ -84,6 +94,20 @@ def get_chat_messages(chatId: str):
         
         messages = []
         for r in rows:
+            meta_data = r[6]
+            if isinstance(meta_data, str):
+                try:
+                    meta_data = json.loads(meta_data)
+                except:
+                    pass
+
+            chart_conf = r[8]
+            if isinstance(chart_conf, str):
+                try:
+                    chart_conf = json.loads(chart_conf)
+                except:
+                    pass
+
             messages.append({
                 "historyId": r[0],
                 "userId": r[1],
@@ -91,9 +115,9 @@ def get_chat_messages(chatId: str):
                 "botOutput": r[3],
                 "summary": r[4],
                 "createdAt": str(r[5]),
-                "metadata": r[6],
+                "metadata": meta_data,
                 "sql": r[7],
-                "chartConfig": r[8]
+                "chartConfig": chart_conf
             })
             
         cur.close()

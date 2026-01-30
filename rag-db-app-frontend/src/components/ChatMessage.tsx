@@ -1,10 +1,10 @@
 import { motion } from "framer-motion";
-import { User as UserIcon, Zap, Database, Check, Copy, Sparkles, Download, Cpu } from "lucide-react";
+import { User as UserIcon, Zap, Database, Check, Copy, Sparkles, Download, Cpu, AlertTriangle } from "lucide-react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import { ProductGrid } from "./productGrid";
 import { ChartRenderer } from "./ChartRenderer";
-import type { Message } from "../types";
+import type { Message, MessageSection } from "../types";
 
 interface ChatMessageProps {
 	msg: Message;
@@ -12,7 +12,6 @@ interface ChatMessageProps {
 	onCopy: (text: string, id: string | number) => void;
 }
 
-// Basic SQL formatter
 const formatSQL = (sql: string) => {
 	if (!sql) return "";
 	const keywords = [
@@ -35,19 +34,13 @@ const formatSQL = (sql: string) => {
 
 const downloadCSV = (data: any[], filename: string) => {
 	if (!data || data.length === 0) return;
-
-	// Get headers from the first object
 	const headers = Object.keys(data[0]);
-
-	// Convert data to CSV format
 	const csvContent = [
-		headers.join(','), // Header row
+		headers.join(','),
 		...data.map(row => headers.map(fieldName =>
-			JSON.stringify(row[fieldName], (_, value) => value ?? '') // Handle nulls/formatting
+			JSON.stringify(row[fieldName], (_, value) => value ?? '')
 		).join(','))
 	].join('\n');
-
-	// Create a blob and trigger download
 	const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
 	const url = URL.createObjectURL(blob);
 	const link = document.createElement('a');
@@ -59,7 +52,105 @@ const downloadCSV = (data: any[], filename: string) => {
 	document.body.removeChild(link);
 };
 
+interface RenderSectionProps {
+	section: MessageSection;
+	idx: number;
+	msgId: string | number;
+	onCopy: (text: string, id: string | number) => void;
+	copiedId: string | number | null;
+}
+
+const RenderSection = ({ section, idx, msgId, onCopy, copiedId }: RenderSectionProps) => {
+	const sqlId = `${msgId}-sql-${idx}`;
+
+	return (
+		<div className={`space-y-3 ${idx > 0 ? "pt-4 border-t dark:border-gray-700" : ""}`}>
+			{/* Text Response */}
+			{section.text && (
+				<div className="prose prose-sm dark:prose-invert max-w-none">
+					<ReactMarkdown
+						remarkPlugins={[remarkGfm]}
+						components={{
+							code: ({ children }) => <code className="bg-black/10 dark:bg-white/10 px-1.5 py-0.5 rounded text-indigo-400 font-mono text-xs">{children}</code>,
+							pre: ({ children }) => <pre className="bg-gray-950 text-gray-100 p-4 rounded-xl overflow-x-auto my-3 border border-gray-800 shadow-inner">{children}</pre>,
+							table: ({ children }) => <div className="overflow-x-auto my-4"><table className="min-w-full border dark:border-gray-700 divide-y dark:divide-gray-700">{children}</table></div>,
+							th: ({ children }) => <th className="px-3 py-2 bg-gray-50 dark:bg-gray-900 text-left text-xs font-bold uppercase">{children}</th>,
+							td: ({ children }) => <td className="px-3 py-2 border-t dark:border-gray-700 text-xs">{children}</td>,
+						}}
+					>
+						{section.text}
+					</ReactMarkdown>
+				</div>
+			)}
+
+			{/* Error Message */}
+			{section.error && (
+				<div className="flex items-center gap-2 text-red-500 bg-red-50 dark:bg-red-900/20 p-3 rounded-lg text-sm">
+					<AlertTriangle size={16} />
+					{section.error}
+				</div>
+			)}
+
+			{/* Chart */}
+			{section.chartConfig && section.products && (
+				<ChartRenderer data={section.products} config={section.chartConfig} />
+			)}
+
+			{/* SQL Code with Copy Button */}
+			{section.sql && (
+				<div className="mt-3 mb-2">
+					<div className="flex items-center justify-between mb-1.5 pl-1">
+						<div className="flex items-center gap-1.5 text-[10px] font-semibold text-gray-400 uppercase tracking-wider">
+							<Database size={12} /> Generated SQL
+						</div>
+						<button
+							onClick={() => onCopy(section.sql!, sqlId)}
+							className="flex items-center gap-1 text-[10px] text-gray-400 hover:text-indigo-400 transition-colors"
+							title="Copy SQL Query"
+						>
+							{copiedId === sqlId ? (
+								<>
+									<Check size={12} className="text-green-500" /> Copied
+								</>
+							) : (
+								<>
+									<Copy size={12} /> Copy SQL
+								</>
+							)}
+						</button>
+					</div>
+					<div className="bg-gray-900 text-gray-200 p-3 rounded-lg text-xs font-mono overflow-x-auto border border-gray-700 shadow-inner whitespace-pre-wrap">
+						{formatSQL(section.sql)}
+					</div>
+				</div>
+			)}
+
+			{/* Data Grid */}
+			{section.products && section.products.length > 0 && (
+				<ProductGrid products={section.products} />
+			)}
+
+			{/* Download Button for this section */}
+			{section.products && section.products.length > 0 && (
+				<div className="flex justify-end">
+					<button
+						onClick={() => downloadCSV(section.products!, `data-section-${idx}.csv`)}
+						className="flex items-center gap-1 text-xs text-gray-500 hover:text-indigo-500 transition-colors"
+					>
+						<Download size={14} /> Download CSV
+					</button>
+				</div>
+			)}
+		</div>
+	);
+};
+
 export const ChatMessage = ({ msg, copiedId, onCopy }: ChatMessageProps) => {
+	// Consolidate content for "Copy" functionality (Main message copy)
+	const fullTextToCopy = msg.sections
+		? msg.sections.map(s => `${s.text}\n${s.sql || ''}`).join('\n\n')
+		: msg.text;
+
 	return (
 		<motion.div
 			initial={{ opacity: 0, y: 20 }}
@@ -76,61 +167,52 @@ export const ChatMessage = ({ msg, copiedId, onCopy }: ChatMessageProps) => {
 					: 'bg-white dark:bg-gray-800 border dark:border-gray-700 text-gray-800 dark:text-gray-200 rounded-tl-none'
 					}`}>
 
-					<div className="prose prose-sm dark:prose-invert max-w-none">
-						<ReactMarkdown
-							remarkPlugins={[remarkGfm]}
-							components={{
-								code: ({ children }) => <code className="bg-black/10 dark:bg-white/10 px-1.5 py-0.5 rounded text-indigo-400 font-mono text-xs">{children}</code>,
-								pre: ({ children }) => <pre className="bg-gray-950 text-gray-100 p-4 rounded-xl overflow-x-auto my-3 border border-gray-800 shadow-inner">{children}</pre>,
-								table: ({ children }) => <div className="overflow-x-auto my-4"><table className="min-w-full border dark:border-gray-700 divide-y dark:divide-gray-700">{children}</table></div>,
-								th: ({ children }) => <th className="px-3 py-2 bg-gray-50 dark:bg-gray-900 text-left text-xs font-bold uppercase">{children}</th>,
-								td: ({ children }) => <td className="px-3 py-2 border-t dark:border-gray-700 text-xs">{children}</td>,
-							}}
-						>
-							{msg.text}
-						</ReactMarkdown>
-					</div>
-
-					{msg.chartConfig && msg.products && (
-						<ChartRenderer data={msg.products} config={msg.chartConfig} />
-					)}
-
-					{msg.sql && (
-						<div className="mt-3 mb-2">
-							<div className="flex items-center gap-1.5 text-[10px] font-semibold text-gray-400 uppercase tracking-wider mb-1.5 pl-1">
-								<Database size={12} /> Generated SQL
-							</div>
-							<div className="bg-gray-900 text-gray-200 p-3 rounded-lg text-xs font-mono overflow-x-auto border border-gray-700 shadow-inner whitespace-pre-wrap">
-								{formatSQL(msg.sql)}
-							</div>
+					{msg.role === 'user' ? (
+						<div className="text-sm">{msg.text}</div>
+					) : (
+						<div className="flex flex-col gap-6">
+							{msg.sections ? (
+								// Multi-step Rendering
+								msg.sections.map((section, idx) => (
+									<RenderSection
+										key={idx}
+										section={section}
+										idx={idx}
+										msgId={msg.id}
+										onCopy={onCopy}
+										copiedId={copiedId}
+									/>
+								))
+							) : (
+								// Legacy Single-step Rendering
+								<RenderSection
+									idx={0}
+									section={{
+										text: msg.text,
+										sql: msg.sql,
+										products: msg.products,
+										chartConfig: msg.chartConfig
+									}}
+									msgId={msg.id}
+									onCopy={onCopy}
+									copiedId={copiedId}
+								/>
+							)}
 						</div>
 					)}
 
-					{msg.products && msg.products.length > 0 && (
-						<ProductGrid products={msg.products} />
-					)}
-
-					<div className={`absolute top-2 ${msg.role === 'user' ? '-left-20' : '-right-20'} flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity`}>
-						{msg.products && msg.products.length > 0 && (
-							<button
-								onClick={() => downloadCSV(msg.products!, `data-${msg.id}.csv`)}
-								className="p-2 text-gray-400 hover:text-indigo-500 bg-white dark:bg-gray-800 rounded-full shadow-sm border dark:border-gray-700"
-								title="Download CSV"
-							>
-								<Download size={16} />
-							</button>
-						)}
+					<div className={`absolute top-2 ${msg.role === 'user' ? '-left-10' : '-right-10'} flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity`}>
 						<button
-							onClick={() => onCopy(msg.text, msg.id)}
+							onClick={() => onCopy(fullTextToCopy, msg.id)}
 							className="p-2 text-gray-400 hover:text-indigo-500 bg-white dark:bg-gray-800 rounded-full shadow-sm border dark:border-gray-700"
-							title="Copy Response"
+							title="Copy Full Response"
 						>
 							{copiedId === msg.id ? <Check size={16} className="text-green-500" /> : <Copy size={16} />}
 						</button>
 					</div>
 				</div>
 
-				{/* Footer with Summary and Token Usage */}
+				{/* Footer */}
 				<div className="flex flex-wrap items-center gap-3 px-2">
 					{msg.role === 'bot' && msg.summary && (
 						<span className="text-[10px] text-gray-400 font-medium flex items-center gap-1">
@@ -138,8 +220,8 @@ export const ChatMessage = ({ msg, copiedId, onCopy }: ChatMessageProps) => {
 						</span>
 					)}
 					{msg.role === 'bot' && msg.usage && (
-						<span className="text-[10px] text-gray-400 font-medium flex items-center gap-1" title="Token Usage (Input / Output)">
-							<Cpu size={10} /> {msg.usage.prompt_tokens} in / {msg.usage.completion_tokens} out
+						<span className="text-[10px] text-gray-400 font-medium flex items-center gap-1" title="Token Usage">
+							<Cpu size={10} /> {msg.usage.prompt_tokens}/{msg.usage.completion_tokens}
 						</span>
 					)}
 				</div>

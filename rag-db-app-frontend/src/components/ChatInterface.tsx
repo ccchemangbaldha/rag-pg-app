@@ -48,20 +48,31 @@ export const ChatInterface = ({ user, chatId, onNewMessage }: { user: any, chatI
 				const history = await api.getChatMessages(chatId);
 				const sorted = history.sort((a: any, b: any) => new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime());
 
-				const formatted: Message[] = sorted.flatMap((h: any) => [
-					{ id: `u-${h.historyId}`, role: 'user', text: h.userInput },
-					{
-						id: `b-${h.historyId}`,
-						role: 'bot',
-						text: h.botOutput,
-						summary: h.summary,
-						products: h.metadata,
-						sql: h.sql,
-						chartConfig: parseChartConfig(h.chartConfig),
-						// Note: History usually doesn't store token usage in this simplified schema, 
-						// so we omit it for old messages unless the DB schema was also updated.
-					}
-				]);
+				const formatted: Message[] = sorted.flatMap((h: any) => {
+					// Logic to determine if this is a new multi-step message or legacy
+					// New structure stores { sections: [...] } in metadata
+					const metadata = h.metadata || {};
+					const hasSections = metadata && !Array.isArray(metadata) && metadata.sections;
+
+					return [
+						{ id: `u-${h.historyId}`, role: 'user', text: h.userInput },
+						{
+							id: `b-${h.historyId}`,
+							role: 'bot',
+							text: h.botOutput, // Fallback text
+							summary: h.summary,
+
+							// Key Fix: Hydrate sections if present
+							sections: hasSections ? metadata.sections : undefined,
+
+							// Fallback for legacy messages (where metadata was just products array)
+							products: Array.isArray(metadata) ? metadata : (metadata.legacyResults || []),
+
+							sql: h.sql,
+							chartConfig: parseChartConfig(h.chartConfig),
+						}
+					];
+				});
 
 				setMessages(formatted);
 			} catch (e) {
@@ -132,14 +143,19 @@ export const ChatInterface = ({ user, chatId, onNewMessage }: { user: any, chatI
 		const isNewChat = !chatId;
 
 		const historyPayload = messages.slice(-10).map(msg => {
-			const obj: any = {
-				role: msg.role === 'bot' ? 'assistant' : 'user',
-				content: msg.text
-			};
-			if (msg.sql != null) {
-				obj.sql = msg.sql;
+			// Construct context. If multi-step, we concatenate SQLs to give context.
+			let content = msg.text;
+			if (msg.sections) {
+				const sqls = msg.sections.map(s => s.sql).filter(Boolean).join('; ');
+				if (sqls) content += `\n[Context SQLs: ${sqls}]`;
+			} else if (msg.sql) {
+				content += `\n[Context SQL: ${msg.sql}]`;
 			}
-			return obj;
+
+			return {
+				role: msg.role === 'bot' ? 'assistant' : 'user',
+				content: content
+			};
 		});
 
 		setInput("");
@@ -157,30 +173,66 @@ export const ChatInterface = ({ user, chatId, onNewMessage }: { user: any, chatI
 				history: historyPayload
 			});
 
-			setMessages(prev => [...prev, {
+			// Normalize response: Backend now returns 'sections'. 
+			// If legacy backend, it might return flat fields.
+			const sections = response.sections || [];
+
+			// Construct the Message object
+			const newBotMessage: Message = {
 				id: tempId + "_bot",
 				role: 'bot',
-				text: response.botOutput,
+				text: response.botOutput || (sections.length > 0 ? sections[0].botOutput : ""),
 				summary: response.action,
-				products: response.results,
-				sql: response.sql,
-				chartConfig: response.chartConfig,
-				usage: response.usage // Mapping usage here
-			}]);
+				sections: sections.map((s: any) => ({
+					text: s.botOutput,
+					sql: s.sql,
+					products: s.results,
+					chartConfig: s.chartConfig,
+					error: s.error
+				})),
+				usage: response.usage
+			};
+
+			// Legacy fallback for UI if 'sections' was empty (shouldn't happen with new backend)
+			if (newBotMessage.sections && newBotMessage.sections.length === 0) {
+				newBotMessage.text = response.botOutput;
+				newBotMessage.products = response.results;
+				newBotMessage.sql = response.sql;
+				newBotMessage.chartConfig = response.chartConfig;
+			}
+
+			setMessages(prev => [...prev, newBotMessage]);
+
+			// Prepare data for History API
+			// We store the structured 'sections' in metadata so we can reload it exactly as is.
+			const metadataToSave = {
+				sections: newBotMessage.sections,
+				// Optional: store flat results for simpler consumers if needed, 
+				// but 'sections' is the source of truth now.
+			};
+
+			// Concatenate SQLs for the 'sql' column (for simple DB queries/viewers)
+			const combinedSql = newBotMessage.sections?.map(s => s.sql).filter(Boolean).join(';\n\n') || response.sql;
+
+			// Primary text for the 'botOutput' column
+			const mainText = newBotMessage.sections && newBotMessage.sections.length > 0
+				? newBotMessage.sections.map(s => s.text).join('\n\n')
+				: response.botOutput;
 
 			await api.createHistory({
 				userId: user.userId,
 				chatId: currentChatId,
 				userInput: userText,
-				botOutput: response.botOutput,
+				botOutput: mainText || "Response generated.",
 				summary: response.action,
-				metadata: response.results,
-				sql: response.sql,
+				metadata: metadataToSave,
+				sql: combinedSql,
 				chartConfig: response.chartConfig
 			});
 
 			if (isNewChat) onNewMessage();
 		} catch (err) {
+			console.error(err);
 			setMessages(prev => [...prev, { id: "err", role: 'bot', text: "⚠️ **Connection Error:** Failed to reach AI service." }]);
 		} finally { setIsTyping(false); }
 	};

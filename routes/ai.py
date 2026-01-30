@@ -63,48 +63,55 @@ METRIC DEFINITIONS:
 - Total Sales   = SUM(sales.sales) (Quantity)
 - Conversion Rt = SUM(sales.sales)::NUMERIC / NULLIF(SUM(sales.clicks), 0) * 100
 
-SEMANTIC RULES (INTERPRETATION):
-- "Best selling"     -> ORDER BY SUM(sales.sales) DESC
-- "Top rated"        -> ORDER BY rating DESC
-- "Cheapest"         -> ORDER BY price ASC
-- "Monsoon"/"Rain"   -> material ILIKE '%synthetic%' OR description ILIKE '%waterproof%'
-- "Winter"/"Cold"    -> material ILIKE '%leather%' OR description ILIKE '%warm%'
-- "Gym"/"Running"    -> sub_category ILIKE '%Running%' OR sub_category ILIKE '%Sports%'
-- "Formal/Office"    -> sub_category ILIKE '%Formal%'
-- "Trends"           -> Group by DATE_TRUNC('month', date)
-
 RULES & CONSTRAINTS:
 1. Output purely valid JSON. No markdown, no preambles.
 2. ONLY generate SELECT queries. No UPDATE/DELETE/INSERT.
 3. Use ILIKE for string matching (case-insensitive).
 4. If the user asks for charts, strictly use the "chartConfig" format provided below.
 5. For Time Series: Always ORDER BY the date column.
-6. Ambiguity: If the user asks about "sales", clarify if they mean "Revenue" (money) or "Quantity" (units). Default to Revenue if unsure.
+6. **MULTI-STEP REASONING:** If the user asks multiple distinct questions (e.g., "Top 10 products AND products starting with A"), you MUST return multiple steps in the `steps` array.
+
+OUTPUT FORMAT:
+{
+  "steps": [
+    {
+      "sql": "SELECT ...",
+      "message": "Explanation for this specific part...",
+      "chartConfig": { ... or null }
+    },
+    ...
+  ]
+}
 
 FEW-SHOT EXAMPLES:
 
 User: "Show me monthly revenue trends."
 Response:
 {
-  "sql": "SELECT DATE_TRUNC('month', date) AS month, SUM(sales * price) AS revenue FROM sales GROUP BY month ORDER BY month",
-  "message": "Here is the monthly revenue trend based on your sales data.",
-  "chartConfig": { "type": "line", "xAxisKey": "month", "series": [{"dataKey": "revenue", "name": "Revenue"}] }
+  "steps": [
+    {
+      "sql": "SELECT DATE_TRUNC('month', date) AS month, SUM(sales * price) AS revenue FROM sales GROUP BY month ORDER BY month",
+      "message": "Here is the monthly revenue trend based on your sales data.",
+      "chartConfig": { "type": "line", "xAxisKey": "month", "series": [{"dataKey": "revenue", "name": "Revenue"}] }
+    }
+  ]
 }
 
-User: "Best running shoes for men under 2000?"
+User: "Top 5 most expensive shoes and also show me the cheapest 3 items."
 Response:
 {
-  "sql": "SELECT product_name, brand, price, rating FROM products WHERE sub_category ILIKE '%Running%' AND gender = 'Men' AND price < 2000 ORDER BY rating DESC LIMIT 5",
-  "message": "Here are the top-rated running shoes for men under 2000.",
-  "chartConfig": null
-}
-
-User: "Which brand has the highest profit?"
-Response:
-{
-  "sql": "SELECT p.brand, SUM((s.price - s.mfrcost) * s.sales) AS total_profit FROM sales s JOIN products p ON s.productid = p.product_id GROUP BY p.brand ORDER BY total_profit DESC LIMIT 10",
-  "message": "Here are the most profitable brands.",
-  "chartConfig": { "type": "bar", "xAxisKey": "brand", "series": [{"dataKey": "total_profit", "name": "Profit"}] }
+  "steps": [
+    {
+      "sql": "SELECT product_name, price FROM products ORDER BY price DESC LIMIT 5",
+      "message": "Here are the top 5 most expensive shoes.",
+      "chartConfig": null
+    },
+    {
+      "sql": "SELECT product_name, price FROM products ORDER BY price ASC LIMIT 3",
+      "message": "Here are the 3 cheapest items found.",
+      "chartConfig": null
+    }
+  ]
 }
 """
 
@@ -125,7 +132,6 @@ def generate_ai_response(messages):
     )
     content = json.loads(completion.choices[0].message.content)
     
-    # Extract token usage for UI display
     usage = {
         "prompt_tokens": completion.usage.prompt_tokens,
         "completion_tokens": completion.usage.completion_tokens,
@@ -166,43 +172,65 @@ def ai_chat(req: AIRequest):
         while attempts <= max_retries:
             ai_response, usage_stats = generate_ai_response(messages)
             
-            generated_sql = ai_response.get("sql")
-            bot_message = ai_response.get("message")
-            chart_config = ai_response.get("chartConfig")
+            # Handle both legacy format (flat object) and new format (steps array)
+            steps = ai_response.get("steps")
+            if not steps:
+                # Fallback if model outputs legacy flat structure
+                steps = [ai_response]
 
-            if not generated_sql:
-                return send(True, "Success", {
-                    "botOutput": bot_message,
-                    "sql": None,
-                    "results": [],
-                    "chartConfig": None,
-                    "action": "chat",
-                    "usage": usage_stats
-                })
-
-            if not generated_sql.strip().lower().startswith("select"):
-                return send(False, "Security violation: only SELECT queries allowed.")
-
+            processed_sections = []
+            all_sqls = []
+            
+            conn = None
             try:
                 conn = get_connection()
                 cur = conn.cursor()
-                cur.execute(generated_sql)
-                rows = cur.fetchall()
-                cols = [d[0] for d in cur.description]
-                results = [dict(zip(cols, r)) for r in rows]
+
+                for step in steps:
+                    generated_sql = step.get("sql")
+                    bot_message = step.get("message")
+                    chart_config = step.get("chartConfig")
+
+                    section_result = {
+                        "botOutput": bot_message,
+                        "sql": generated_sql,
+                        "results": [],
+                        "chartConfig": chart_config,
+                        "error": None
+                    }
+
+                    if generated_sql:
+                        if not generated_sql.strip().lower().startswith("select"):
+                            section_result["error"] = "Security violation: Only SELECT queries allowed."
+                        else:
+                            try:
+                                cur.execute(generated_sql)
+                                rows = cur.fetchall()
+                                cols = [d[0] for d in cur.description]
+                                results = [dict(zip(cols, r)) for r in rows]
+                                section_result["results"] = results
+                                all_sqls.append(generated_sql)
+                            except Exception as sql_err:
+                                # If one query fails, we mark it as failed but continue others if possible, 
+                                # OR we trigger the retry mechanism for the whole batch.
+                                # For simplicity in this robust version, we throw to trigger the retry logic.
+                                raise sql_err
+                    
+                    processed_sections.append(section_result)
+
                 cur.close()
                 conn.close()
 
                 return send(True, "Success", {
-                    "botOutput": bot_message,
-                    "sql": generated_sql,
-                    "results": results,
-                    "chartConfig": chart_config,
-                    "action": "search_result",
+                    "sections": processed_sections,
+                    "action": "chat",
                     "usage": usage_stats
                 })
 
             except Exception as db_err:
+                if conn:
+                    conn.close()
+                
                 attempts += 1
                 err = str(db_err)
                 print(f"SQL Execution Failed (Attempt {attempts}): {err}")
@@ -213,7 +241,7 @@ def ai_chat(req: AIRequest):
                 messages.append({"role": "assistant", "content": json.dumps(ai_response)})
                 messages.append({
                     "role": "user",
-                    "content": f"The SQL failed with error: {err}. Please correct the SQL and regenerate JSON."
+                    "content": f"The SQL execution failed with error: {err}. Please correct the SQL and regenerate the JSON."
                 })
 
     except Exception as e:

@@ -5,7 +5,8 @@ export interface User {
 	password?: string;
 	createdAt?: string;
 }
-interface ChartConfig {
+
+export interface ChartConfig {
 	type: 'bar' | 'line' | 'pie' | 'area';
 	xAxisKey: string;
 	series: { dataKey: string; name: string; color?: string }[];
@@ -18,6 +19,14 @@ export interface TokenUsage {
 	total_tokens: number;
 }
 
+export interface MessageSection {
+	text: string;
+	sql?: string;
+	products?: Product[] | any[];
+	chartConfig?: ChartConfig;
+	error?: string;
+}
+
 export interface Message {
 	id: string | number;
 	role: 'user' | 'bot';
@@ -27,7 +36,9 @@ export interface Message {
 	products?: Product[];
 	sql?: string;
 	chartConfig?: ChartConfig;
-	usage?: TokenUsage; // Added this field
+	sections?: MessageSection[];
+
+	usage?: TokenUsage;
 }
 
 export interface Product {
